@@ -1,0 +1,10 @@
+# Ignore Frontend dependencies
+Frontend/node_modules/
+Frontend/.env
+Frontend/dist/
+Frontend/dist-ssr/
+
+# Ignore Backend dependencies and environment files
+Backend/__pycache__/
+Backend/.venv/
+Backend/.env
