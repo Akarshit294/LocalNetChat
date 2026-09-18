@@ -1,7 +1,5 @@
 import { useEffect, useState } from 'react';
-
-// Same machine that served this page, but port 8000
-const API_URL = `http://${window.location.hostname}:8000`;
+import { api } from '../lib/api.ts';
 
 export default function Health() {
   const [status, setStatus] = useState('checking...');
@@ -9,9 +7,7 @@ export default function Health() {
   useEffect(() => {
     async function checkHealth() {
       try {
-        const res = await fetch(`${API_URL}/health`);
-        if (!res.ok) throw new Error(`HTTP ${res.status}`);
-        const data = await res.json();
+        const data = await api.health();
         setStatus(data.status);
       } catch (err) {
         console.error('Health check failed:', err);
