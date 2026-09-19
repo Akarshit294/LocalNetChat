@@ -4,6 +4,8 @@
 const API_BASE = `http://${window.location.hostname}:8000`;
 const REQUEST_TIMEOUT_MS = 10_000;
 
+export const WS_URL = `ws://${window.location.hostname}:8000/ws`;
+
 export class ApiError extends Error {
   readonly status: number;
   readonly body: string;
@@ -74,4 +76,5 @@ export interface HealthResponse {
 
 export const api = {
   health: () => request<HealthResponse>('/health'),
+  verifyUsername: (username: string) => request<{ available: boolean }>(`/verify_username?username=${encodeURIComponent(username)}`),
 };
