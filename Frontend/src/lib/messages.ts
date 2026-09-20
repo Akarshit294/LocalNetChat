@@ -16,6 +16,13 @@ export type SystemMessage = {
   text: string;
 };
 
+// sent only to us, when we join: this is who you are
+export type WelcomeMessage = {
+  type: 'welcome';
+  user_id: string;
+  user_name: string;
+};
+
 export type RenamedMessage = {
   type: 'renamed';
   new_name: string;
@@ -26,7 +33,12 @@ export type ErrorMessage = {
   reason: string;
 };
 
-export type ServerMessage = UsersMessage | SystemMessage | RenamedMessage | ErrorMessage;
+export type ServerMessage =
+  | UsersMessage
+  | SystemMessage
+  | WelcomeMessage
+  | RenamedMessage
+  | ErrorMessage;
 
 // What we send to the server.
 

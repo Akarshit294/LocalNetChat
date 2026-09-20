@@ -23,6 +23,8 @@ export default function Home() {
     const [connectName, setConnectName] = useState('');
     // the name the server knows us by right now. A rename changes this, not the URL.
     const [joinedName, setJoinedName] = useState('');
+    // our own id, from the server's welcome. Needed to mark "you", and to address people later.
+    const [myId, setMyId] = useState('');
     const [errorLine, setErrorLine] = useState('');
     const nameError = validateUsername(name);
     const debouncedName = useDebounce(name, 500);
@@ -38,6 +40,9 @@ export default function Home() {
                 setUsers(message.users);
             } else if (message.type === 'system') {
                 setSystemLine(message.text);
+            } else if (message.type === 'welcome') {
+                setMyId(message.user_id);
+                setJoinedName(message.user_name);
             } else if (message.type === 'renamed') {
                 // the server accepted it, so this is the name it knows us by now
                 setJoinedName(message.new_name);
@@ -54,6 +59,7 @@ export default function Home() {
             setSystemLine('');
             setJoinedName('');
             setConnectName('');
+            setMyId('');
             setErrorLine('');
         },},
         connect && !!connectName
@@ -95,8 +101,11 @@ export default function Home() {
         sendJsonMessage(message);
     }
 
-    // nothing to rename to unless the name is valid and actually different
-    const canRename = nameError === null && name.trim() !== joinedName;
+    // the name check counts us as holding our own name, so changing only its case
+    // always reads as "unavailable". The server allows it, since it skips us by id.
+    const isOwnName = name.trim().toLowerCase() === joinedName.toLowerCase();
+    // nothing to rename to unless the name is valid, free, and actually different
+    const canRename = nameError === null && name.trim() !== joinedName && (ready || isOwnName);
 
     return(
         connect === false ?
@@ -116,7 +125,7 @@ export default function Home() {
                 <button onClick={() => setConnect(false)}>Disconnect</button>
                 {errorLine && <p>{errorLine}</p>}
                 {systemLine && <p>{systemLine}</p>}
-                <UserList users={users} />
+                <UserList users={users} myId={myId} />
             </>
     )
 }

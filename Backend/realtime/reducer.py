@@ -1,4 +1,4 @@
-from realtime.messages import error_message, system_message, users_message
+from realtime.messages import error_message, system_message, users_message, welcome_message
 from realtime.types import AppState, Command, Event
 from realtime.validation import is_name_taken, validate_username
 
@@ -35,7 +35,16 @@ def reduce(state: AppState, event: Event):
 
             new_state = AppState(users={**state.users, event.payload["user"].id: event.payload["user"]})
             return new_state, [
-                Command(type="broadcast", message=users_message(new_state)),
+                # the greeting goes first, so they know who they are before the list arrives
+                Command(
+                    type="send",
+                    user_id=event.payload["user"].id,
+                    message=welcome_message(event.payload["user"])
+                ),
+                Command(
+                    type="broadcast",
+                    message=users_message(new_state)
+                ),
                 Command(
                     type="broadcast",
                     message=system_message(f"{event.payload['user'].user_name} has joined the chat"),
@@ -48,8 +57,14 @@ def reduce(state: AppState, event: Event):
             new_state = AppState(users=users)
             who_left = state.users[user_id].user_name
             return new_state, [
-                Command(type="broadcast", message=users_message(new_state)),
-                Command(type="broadcast", message=system_message(f"{who_left} has left the chat")),
+                Command(
+                    type="broadcast", 
+                    message=users_message(new_state)
+                ),
+                Command(
+                    type="broadcast", 
+                    message=system_message(f"{who_left} has left the chat")
+                ),
             ]
 
     elif event_type == "rename_requested":
@@ -80,9 +95,19 @@ def reduce(state: AppState, event: Event):
             users = {**state.users, user_id: updated_user}
             new_state = AppState(users=users)
             return new_state, [
-                Command(type="send", user_id=user_id, message={"type": "renamed", "new_name": new_name}),
-                Command(type="broadcast", message=users_message(new_state)),
-                Command(type="broadcast", message=system_message(f"{old_name} has changed their name to {new_name}")),
+                Command(
+                    type="send", 
+                    user_id=user_id, 
+                    message={"type": "renamed", "new_name": new_name}
+                ),
+                Command(
+                    type="broadcast", 
+                    message=users_message(new_state)
+                ),
+                Command(
+                    type="broadcast", 
+                    message=system_message(f"{old_name} has changed their name to {new_name}")
+                ),
             ]
 
     # nothing to change: hand back the state we were given
