@@ -24,8 +24,8 @@ class Event(BaseModel):
     user_id: uuid.UUID | None = None
 
 class Command(BaseModel):
-    # What the reducer wants done. "close" for now; "broadcast" and "send_to" later.
     type: str
-    user_id: uuid.UUID | None = None
+    user_id: uuid.UUID | None = None 
     code: int | None = None
     reason: str | None = None
+    message: dict | None = None

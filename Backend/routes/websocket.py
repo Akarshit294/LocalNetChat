@@ -13,10 +13,10 @@ async def websocket_endpoint(websocket: WebSocket, username: str = "Anonymous"):
         
     try:
         while True:
-            data = await websocket.receive_text()
-            await ws_manager.send_message(websocket, f"[{username}] {data}")
+            # incoming messages get their own types in the next block.
+            # reading keeps the connection alive and tells us when they leave.
+            await websocket.receive_text()
     except WebSocketDisconnect:
         pass
     finally:
-        # runs on a normal leave AND on any error, so a user is never left behind
         await ws_manager.disconnect(user_id)
