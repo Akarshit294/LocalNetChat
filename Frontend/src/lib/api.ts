@@ -76,5 +76,5 @@ export interface HealthResponse {
 
 export const api = {
   health: () => request<HealthResponse>('/health'),
-  verifyUsername: (username: string) => request<{ available: boolean }>(`/verify_username?username=${encodeURIComponent(username)}`),
+  verifyUsername: (username: string) => request<{ available: boolean }>(`/users/check?username=${encodeURIComponent(username)}`),
 };

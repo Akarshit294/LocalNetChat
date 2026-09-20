@@ -4,7 +4,11 @@ import { useWebSocket } from 'react-use-websocket/dist/lib/use-websocket';
 import { api, WS_URL } from '../lib/api.ts';
 import useDebounce from '../hooks/useDebounce';
 import { validateUsername } from '../lib/validation.ts';
+import JoinView from './JoinView.tsx';
+import NameInput from './NameInput.tsx';
 
+// Owns the socket and the name state, and decides which screen to show.
+// The socket lives here so switching screens never drops the connection.
 export default function Home() {
     const [connect, setConnect] = useState(false);
     const [name, setName] = useState('');
@@ -36,26 +40,31 @@ export default function Home() {
             }
         }
 
-        if (debouncedName && !nameError) {
+        if (debouncedName && !validateUsername(debouncedName)) {
             verifyUsername();
         }
-    }, [debouncedName, nameError]);
+    }, [debouncedName]);
+
+    function handleNameChange(value: string) {
+        setName(value);
+        setReady(false);   // the old answer was about the old name
+        setStatus('');
+    }
 
     return(
         connect === false ?
-            <>
-                <h1>WebSocket Test</h1>
-                <p>Status: {readyState === ReadyState.OPEN ? 'Connected' : 'Disconnected'}</p>
-                <input placeholder="Type user name..." value={name} onChange={(e) => setName(e.target.value)} />
-                {name && nameError && <p>{nameError}</p>}
-                {status && <p>Username status: {status}</p>}
-                <button onClick={() => setConnect(true)} disabled={nameError !== null || !ready}>Connect</button>
-            </> :
+            <JoinView
+                name={name}
+                onNameChange={handleNameChange}
+                nameError={nameError}
+                status={status}
+                isConnected={readyState === ReadyState.OPEN}
+                canConnect={nameError === null && ready}
+                onConnect={() => setConnect(true)}
+            /> :
             <>
                 <p>Edit User Name</p>
-                <input placeholder="Type user name..." value={name} onChange={(e) => setName(e.target.value)} />
-                {name && nameError && <p>{nameError}</p>}
-                {status && <p>Username status: {status}</p>}
+                <NameInput value={name} onChange={handleNameChange} error={nameError} status={status} />
                 <button onClick={() => setConnect(false)}>Disconnect</button>
             </>
     )
