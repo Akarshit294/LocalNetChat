@@ -1,3 +1,5 @@
+import json
+
 from fastapi import APIRouter, WebSocket, WebSocketDisconnect
 from realtime.manager import ws_manager
 
@@ -15,7 +17,11 @@ async def websocket_endpoint(websocket: WebSocket, username: str = "Anonymous"):
         while True:
             # incoming messages get their own types in the next block.
             # reading keeps the connection alive and tells us when they leave.
-            await websocket.receive_text()
+            try:
+                msg = await websocket.receive_json()
+            except (json.JSONDecodeError, KeyError):
+                continue
+            await ws_manager.handle_message(user_id, msg)
     except WebSocketDisconnect:
         pass
     finally:

@@ -16,4 +16,23 @@ export type SystemMessage = {
   text: string;
 };
 
-export type ServerMessage = UsersMessage | SystemMessage;
+export type RenamedMessage = {
+  type: 'renamed';
+  new_name: string;
+};
+
+export type ErrorMessage = {
+  type: 'error';
+  reason: string;
+};
+
+export type ServerMessage = UsersMessage | SystemMessage | RenamedMessage | ErrorMessage;
+
+// What we send to the server.
+
+export type RenameMessage = {
+  type: 'rename';
+  user_name: string;
+};
+
+export type ClientMessage = RenameMessage;

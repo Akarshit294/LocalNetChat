@@ -1,4 +1,5 @@
 import re
+import uuid
 from realtime.types import AppState, Validate
 
 
@@ -14,10 +15,15 @@ def validate_username(username: str) -> str | None:
     return None
 
 
-def is_name_taken(state: AppState, username: str) -> bool:
-    """Is someone already using this name? Pure - it only reads the state it's given."""
+def is_name_taken(state: AppState, username: str, ignore_user_id: uuid.UUID | None = None) -> bool:
+    """Is someone already using this name? Pure - it only reads the state it's given.
+
+    ignore_user_id skips one person, so renaming yourself from riya1 to Riya1
+    isn't refused as taken by you.
+    """
     # casefold() ignores case, so Riya1 and riya1 count as the same name
     return any(
         user.user_name.casefold() == username.casefold()
-        for user in state.users.values()
+        for user_id, user in state.users.items()
+        if user_id != ignore_user_id
     )

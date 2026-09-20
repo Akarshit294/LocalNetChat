@@ -4,7 +4,7 @@ import { useWebSocket } from 'react-use-websocket/dist/lib/use-websocket';
 import { api, WS_URL } from '../lib/api.ts';
 import useDebounce from '../hooks/useDebounce';
 import { validateUsername } from '../lib/validation.ts';
-import type { ChatUser, ServerMessage } from '../lib/messages.ts';
+import type { ChatUser, ClientMessage, ServerMessage } from '../lib/messages.ts';
 import JoinView from './JoinView.tsx';
 import NameInput from './NameInput.tsx';
 import UserList from './UserList.tsx';
@@ -18,11 +18,18 @@ export default function Home() {
     const [ready, setReady] = useState(false);
     const [users, setUsers] = useState<ChatUser[]>([]);
     const [systemLine, setSystemLine] = useState('');
+    // the name we dialled with. Fixed for the life of this socket, because changing
+    // the URL would make the hook drop the connection and open a new one.
+    const [connectName, setConnectName] = useState('');
+    // the name the server knows us by right now. A rename changes this, not the URL.
+    const [joinedName, setJoinedName] = useState('');
+    const [errorLine, setErrorLine] = useState('');
     const nameError = validateUsername(name);
     const debouncedName = useDebounce(name, 500);
-    const ws_url = `${WS_URL}?username=${encodeURIComponent(name)}`;
+    // built from the dialled name, so neither typing nor a rename reopens the socket
+    const ws_url = `${WS_URL}?username=${encodeURIComponent(connectName)}`;
 
-    const { readyState } = useWebSocket<ServerMessage>(
+    const { readyState, sendJsonMessage } = useWebSocket<ServerMessage>(
         ws_url,
         {  onMessage: (event) => {
             // the server sends the whole list again on every change
@@ -31,6 +38,12 @@ export default function Home() {
                 setUsers(message.users);
             } else if (message.type === 'system') {
                 setSystemLine(message.text);
+            } else if (message.type === 'renamed') {
+                // the server accepted it, so this is the name it knows us by now
+                setJoinedName(message.new_name);
+                setErrorLine('');
+            } else if (message.type === 'error') {
+                setErrorLine(message.reason);
             }
         },
         onClose: (event) => {
@@ -39,8 +52,11 @@ export default function Home() {
             // the list belongs to a live connection, so it goes with it
             setUsers([]);
             setSystemLine('');
+            setJoinedName('');
+            setConnectName('');
+            setErrorLine('');
         },},
-        connect && !!name && !nameError
+        connect && !!connectName
     );
 
     useEffect(() => {
@@ -67,6 +83,21 @@ export default function Home() {
         setStatus('');
     }
 
+    function handleConnect() {
+        const dialled = name.trim();
+        setConnectName(dialled);   // used for the URL, and never changed after this
+        setJoinedName(dialled);    // what the server will know us as, until a rename
+        setConnect(true);
+    }
+
+    function handleRename() {
+        const message: ClientMessage = { type: 'rename', user_name: name.trim() };
+        sendJsonMessage(message);
+    }
+
+    // nothing to rename to unless the name is valid and actually different
+    const canRename = nameError === null && name.trim() !== joinedName;
+
     return(
         connect === false ?
             <JoinView
@@ -76,12 +107,14 @@ export default function Home() {
                 status={status}
                 isConnected={readyState === ReadyState.OPEN}
                 canConnect={nameError === null && ready}
-                onConnect={() => setConnect(true)}
+                onConnect={handleConnect}
             /> :
             <>
                 <p>Edit User Name</p>
                 <NameInput value={name} onChange={handleNameChange} error={nameError} status={status} />
+                <button onClick={handleRename} disabled={!canRename}>Rename</button>
                 <button onClick={() => setConnect(false)}>Disconnect</button>
+                {errorLine && <p>{errorLine}</p>}
                 {systemLine && <p>{systemLine}</p>}
                 <UserList users={users} />
             </>

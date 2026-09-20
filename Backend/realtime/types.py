@@ -1,4 +1,5 @@
 from pydantic import BaseModel, ConfigDict
+from typing import Literal
 import uuid
 from datetime import datetime
 
@@ -20,12 +21,18 @@ class AppState(BaseModel):
 
 class Event(BaseModel):
     type: str
-    user: User | None = None
-    user_id: uuid.UUID | None = None
+    payload: dict = {}
 
 class Command(BaseModel):
     type: str
-    user_id: uuid.UUID | None = None 
+    user_id: uuid.UUID | None = None
     code: int | None = None
     reason: str | None = None
     message: dict | None = None
+
+# What a client may send us. Anything that doesn't fit one of these is refused,
+# so the reducer only ever sees messages of the right shape.
+
+class RenameMessage(BaseModel):
+    type: Literal["rename"]
+    user_name: str

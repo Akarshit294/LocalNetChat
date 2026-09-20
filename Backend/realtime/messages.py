@@ -17,3 +17,8 @@ def users_message(state: AppState):
 def system_message(text: str):
     """A line for the page to show, such as "riya1 has joined the chat"."""
     return {"type": "system", "text": text}
+
+
+def error_message(reason: str):
+    """Something the sender asked for can't be done. Their connection stays open."""
+    return {"type": "error", "reason": reason}

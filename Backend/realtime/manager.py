@@ -1,10 +1,17 @@
 from fastapi import WebSocket
-from realtime.types import User, AppState, Event, Command
+from pydantic import ValidationError
+from realtime.messages import error_message
+from realtime.types import User, AppState, Event, Command, RenameMessage
 from realtime.reducer import reduce
 from realtime.validation import is_name_taken
 import uuid
 import asyncio
 from datetime import datetime
+
+# every message type a client may send, and the model that checks its shape
+INCOMING_MESSAGES = {
+    "rename": RenameMessage,
+}
 
 
 class WebSocketManager:
@@ -31,6 +38,14 @@ class WebSocketManager:
                 except Exception:
                     print(f"Failed to send broadcast to {user_id}, dropping the socket")
                     self.sockets.pop(user_id, None)
+        elif command.type == "send":
+            websocket = self.sockets.get(command.user_id)
+            if websocket:
+                try:
+                    await websocket.send_json(command.message)
+                except Exception:
+                    print(f"Failed to send message to {command.user_id}, dropping the socket")
+                    self.sockets.pop(command.user_id, None)
 
     async def connect(self, websocket: WebSocket, username: str):
         await websocket.accept()
@@ -40,7 +55,7 @@ class WebSocketManager:
 
         self.sockets[user_id] = websocket
 
-        await self.dispatch(Event(type="join_requested", user=user))
+        await self.dispatch(Event(type="join_requested", payload={"user": user}))
 
         if user_id in self.state.users:
             return user_id
@@ -49,10 +64,37 @@ class WebSocketManager:
     async def disconnect(self, user_id: uuid.UUID):
         if user_id in self.sockets:
             del self.sockets[user_id]
-            await self.dispatch(Event(type="user_left", user_id=user_id))
+            await self.dispatch(Event(type="user_left", payload={"user_id": user_id}))
 
     def verify_username(self, username: str):
         return not is_name_taken(self.state, username)
+
+    async def handle_message(self, user_id: uuid.UUID, message):
+        # who sent it is decided by the socket it arrived on, never by the message
+        if user_id not in self.state.users:
+            return
+
+        message_type = message.get("type") if isinstance(message, dict) else None
+        model = INCOMING_MESSAGES.get(message_type)
+        if model is None:
+            await self.send_error(user_id, f"Unknown message type: {message_type}")
+            return
+
+        try:
+            checked = model.model_validate(message)
+        except ValidationError as error:
+            print(f"Bad {message_type} message from {user_id}: {error}")
+            await self.send_error(user_id, f"That {message_type} message was the wrong shape")
+            return
+
+        if isinstance(checked, RenameMessage):
+            await self.dispatch(
+                Event(type="rename_requested", payload={"user_id": user_id, "new_name": checked.user_name})
+            )
+
+    async def send_error(self, user_id: uuid.UUID, reason: str):
+        # a message we couldn't even read never becomes an event, so answer it here
+        await self.run(Command(type="send", user_id=user_id, message=error_message(reason)))
 
 
 ws_manager = WebSocketManager()
