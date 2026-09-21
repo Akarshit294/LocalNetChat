@@ -8,7 +8,7 @@ from realtime.messages import (
     welcome_message,
 )
 from realtime.types import AppState, Chat, Command, Event
-from realtime.validation import is_name_taken, validate_username
+from realtime.validation import is_name_taken, validate_group_name, validate_username
 
 
 def chats_commands(state: AppState, user_ids):
@@ -217,6 +217,167 @@ def reduce(state: AppState, event: Event):
                 ),
                 *chats_commands(new_state, chat.members),
             ]
+
+    elif event_type == "create_group_requested":
+        user_id = event.payload.get("user_id")
+        member_ids = event.payload.get("member_ids")
+        name = event.payload.get("name")
+        new_chat_id = event.payload.get("new_chat_id")
+        if user_id and member_ids is not None and name is not None and user_id in state.users:
+            error = validate_group_name(name)
+            if error:
+                return state, [
+                    Command(
+                        type="send",
+                        user_id=user_id,
+                        message=error_message(error)
+                    )
+                ]
+
+            # who sent this comes from the socket, so the maker is added here rather
+            # than trusted from the payload. Their own id and repeats are dropped.
+            others = []
+            for member_id in member_ids:
+                if member_id != user_id and member_id not in others:
+                    others.append(member_id)
+
+            if not others:
+                return state, [
+                    Command(
+                        type="send",
+                        user_id=user_id,
+                        message=error_message("Pick at least one person for the group")
+                    )
+                ]
+
+            if any(member_id not in state.users for member_id in others):
+                return state, [
+                    Command(
+                        type="send",
+                        user_id=user_id,
+                        message=error_message("Someone you picked isn't here any more")
+                    )
+                ]
+
+            # no looking for an existing group first, unlike a private chat: the same
+            # people may want several groups, and each one is told apart by its name
+            chat = Chat(
+                id=new_chat_id,
+                type="group",
+                name=name.strip(),
+                members=[user_id, *others],
+            )
+            new_state = state.model_copy(update={"chats": {**state.chats, chat.id: chat}})
+            return new_state, [
+                Command(
+                    type="send",
+                    user_id=user_id,
+                    message=chat_opened_message(chat.id)
+                ),
+                # everyone in it, so the group appears for them too
+                *chats_commands(new_state, chat.members),
+            ]
+
+    elif event_type == "add_member_requested":
+        user_id = event.payload.get("user_id")
+        chat_id = event.payload.get("chat_id")
+        new_member_id = event.payload.get("new_member_id")
+        if user_id and chat_id and new_member_id and user_id in state.users:
+            chat = state.chats.get(chat_id)
+            if not chat or user_id not in chat.members:
+                return state, [
+                    Command(
+                        type="send",
+                        user_id=user_id,
+                        message=error_message("That chat isn't yours")
+                    )
+                ]
+
+            if chat.type != "group":
+                return state, [
+                    Command(
+                        type="send",
+                        user_id=user_id,
+                        message=error_message("A private chat is just the two of you")
+                    )
+                ]
+
+            if new_member_id in chat.members:
+                return state, [
+                    Command(
+                        type="send",
+                        user_id=user_id,
+                        message=error_message("They're already in this group")
+                    )
+                ]
+
+            if new_member_id not in state.users:
+                return state, [
+                    Command(
+                        type="send",
+                        user_id=user_id,
+                        message=error_message("They aren't here any more")
+                    )
+                ]
+
+            joined = chat.model_copy(update={"members": [*chat.members, new_member_id]})
+            new_state = state.model_copy(update={"chats": {**state.chats, chat_id: joined}})
+            # the new person is in that list, so the group simply appears for them.
+            # No chat_opened: it isn't their doing, so their page shouldn't jump.
+            return new_state, chats_commands(new_state, joined.members)
+
+    elif event_type == "remove_member_requested":
+        user_id = event.payload.get("user_id")
+        chat_id = event.payload.get("chat_id")
+        leaving_id = event.payload.get("leaving_id")
+        if user_id and chat_id and leaving_id and user_id in state.users:
+            chat = state.chats.get(chat_id)
+            if not chat or user_id not in chat.members:
+                return state, [
+                    Command(
+                        type="send",
+                        user_id=user_id,
+                        message=error_message("That chat isn't yours")
+                    )
+                ]
+
+            if chat.type != "group":
+                return state, [
+                    Command(
+                        type="send",
+                        user_id=user_id,
+                        message=error_message("A private chat is just the two of you")
+                    )
+                ]
+
+            if leaving_id not in chat.members:
+                return state, [
+                    Command(
+                        type="send",
+                        user_id=user_id,
+                        message=error_message("They aren't in this group")
+                    )
+                ]
+
+            members = [member_id for member_id in chat.members if member_id != leaving_id]
+            if members:
+                chats = {**state.chats, chat_id: chat.model_copy(update={"members": members})}
+            else:
+                # the last person walked out, so there is no group left to keep
+                chats = {cid: one for cid, one in state.chats.items() if cid != chat_id}
+
+            # an offline person's name is kept only while some chat still names them
+            known_names = state.known_names
+            if leaving_id not in state.users and not any(
+                leaving_id in one.members for one in chats.values()
+            ):
+                known_names = {
+                    uid: name for uid, name in known_names.items() if uid != leaving_id
+                }
+
+            new_state = state.model_copy(update={"chats": chats, "known_names": known_names})
+            # the one who left is told as well, so the group drops off their list
+            return new_state, chats_commands(new_state, [*members, leaving_id])
 
     elif event_type == "message_sent":
         user_id = event.payload.get("user_id")

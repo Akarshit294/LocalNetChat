@@ -20,8 +20,13 @@ function canWrite(chat: ChatSummary, myId: string) {
 }
 
 export default function ChatPage() {
-    const { isConnected, myId, chats, messages, unread, openChatId, selectChat, sendMessage } = useRealtime();
+    const {
+        isConnected, myId, users, chats, messages, unread, openChatId,
+        selectChat, sendMessage, addMember, removeMember,
+    } = useRealtime();
     const [draft, setDraft] = useState('');
+    // who's picked in the "add someone" box
+    const [toAdd, setToAdd] = useState('');
 
     if (!isConnected) {
         return <Navigate to="/" replace />;
@@ -29,6 +34,13 @@ export default function ChatPage() {
 
     const openChat = chats.find((chat) => chat.id === openChatId);
     const openMessages = messages[openChatId] ?? [];
+    // everyone online who isn't in this group yet. We're always a member, so we're never here.
+    const addable = openChat
+        ? users.filter((user) => !openChat.members.some((member) => member.id === user.id))
+        : [];
+    // the pick is dropped if that person left or you switched chats, so the box
+    // can never send an id that isn't on offer
+    const pick = addable.some((user) => user.id === toAdd) ? toAdd : '';
 
     function nameOf(fromId: string) {
         if (fromId === myId) {
@@ -43,6 +55,13 @@ export default function ChatPage() {
         if (openChat && text) {
             sendMessage(openChat.id, text);
             setDraft('');
+        }
+    }
+
+    function add() {
+        if (openChat && pick) {
+            addMember(openChat.id, pick);
+            setToAdd('');
         }
     }
 
@@ -66,6 +85,38 @@ export default function ChatPage() {
             {openChat && (
                 <>
                     <h2>{chatTitle(openChat, myId)}</h2>
+
+                    {/* only a group has members worth listing, and only a group can change them */}
+                    {openChat.type === 'group' && (
+                        <>
+                            <h3>In this group ({openChat.members.length})</h3>
+                            <ul>
+                                {openChat.members.map((member) => (
+                                    <li key={member.id}>
+                                        {member.user_name}
+                                        {member.id === myId && ' (you)'}
+                                        {member.id !== myId && !member.online && ' (disconnected)'}
+                                        {/* no roles yet, so anyone in the group may do this */}
+                                        <button onClick={() => removeMember(openChat.id, member.id)}>
+                                            {member.id === myId ? 'Leave' : 'Remove'}
+                                        </button>
+                                    </li>
+                                ))}
+                            </ul>
+                            {addable.length > 0 && (
+                                <>
+                                    <select value={pick} onChange={(event) => setToAdd(event.target.value)}>
+                                        <option value="">Add someone...</option>
+                                        {addable.map((user) => (
+                                            <option key={user.id} value={user.id}>{user.user_name}</option>
+                                        ))}
+                                    </select>
+                                    <button onClick={add} disabled={!pick}>Add</button>
+                                </>
+                            )}
+                        </>
+                    )}
+
                     <ul>
                         {openMessages.map((message) => (
                             <li key={`${message.sent_at}-${message.from_id}`}>
@@ -84,7 +135,7 @@ export default function ChatPage() {
                             <button onClick={send} disabled={!draft.trim()}>Send</button>
                         </>
                     ) : (
-                        <p>They have disconnected, so you can't send anything here.</p>
+                        <p>Nobody else here is connected, so you can't send anything.</p>
                     )}
                 </>
             )}

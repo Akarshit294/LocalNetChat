@@ -121,6 +121,26 @@ export default function RealtimeProvider({ children }: { children: ReactNode }) 
         sendJsonMessage(message);
     }
 
+    // we're not in userIds: the server adds us, from the socket this arrives on.
+    // It answers with chat_opened, so the new group opens the same way a private chat does.
+    function createGroup(userIds: string[], name: string) {
+        const message: ClientMessage = { type: 'create_group', user_ids: userIds, name };
+        sendJsonMessage(message);
+    }
+
+    // no roles, so anyone in a group may do either of these
+    function addMember(chatId: string, userId: string) {
+        const message: ClientMessage = { type: 'add_member', chat_id: chatId, user_id: userId };
+        sendJsonMessage(message);
+    }
+
+    // passing our own id is how we leave. The server answers with a chats list
+    // that no longer has the group in it, so it drops off the page by itself.
+    function removeMember(chatId: string, userId: string) {
+        const message: ClientMessage = { type: 'remove_member', chat_id: chatId, user_id: userId };
+        sendJsonMessage(message);
+    }
+
     const realtime = {
         isConnected: readyState === ReadyState.OPEN,
         closeReason,
@@ -139,6 +159,9 @@ export default function RealtimeProvider({ children }: { children: ReactNode }) 
         openChat,
         selectChat,
         sendMessage,
+        createGroup,
+        addMember,
+        removeMember,
     };
 
     return <RealtimeContext.Provider value={realtime}>{children}</RealtimeContext.Provider>;

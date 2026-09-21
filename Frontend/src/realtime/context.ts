@@ -21,6 +21,9 @@ export type Realtime = {
     openChat: (userId: string) => void;            // message this person
     selectChat: (chatId: string) => void;
     sendMessage: (chatId: string, text: string) => void;
+    createGroup: (userIds: string[], name: string) => void;   // a group with us and these people
+    addMember: (chatId: string, userId: string) => void;
+    removeMember: (chatId: string, userId: string) => void;   // our own id means leaving
 };
 
 export const RealtimeContext = createContext<Realtime | null>(null);

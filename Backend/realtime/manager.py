@@ -6,7 +6,10 @@ from realtime.types import (
     AppState,
     Event,
     Command,
+    AddMemberMessage,
+    CreateGroupMessage,
     OpenChatMessage,
+    RemoveMemberMessage,
     RenameMessage,
     SendMessage,
 )
@@ -21,6 +24,9 @@ INCOMING_MESSAGES = {
     "rename": RenameMessage,
     "open_chat": OpenChatMessage,
     "send_message": SendMessage,
+    "create_group": CreateGroupMessage,
+    "add_member": AddMemberMessage,
+    "remove_member": RemoveMemberMessage,
 }
 
 
@@ -100,7 +106,7 @@ class WebSocketManager:
         # the reducer is pure, so anything random or clock-based is made here
         if isinstance(checked, RenameMessage):
             await self.dispatch(
-                Event(type="rename_requested", payload={"user_id": user_id, "new_name": checked.user_name})
+                Event(type="rename_requested", payload={"user_id": user_id, "new_name": checked.user_name.strip()})
             )
         elif isinstance(checked, OpenChatMessage):
             await self.dispatch(
@@ -117,6 +123,31 @@ class WebSocketManager:
                     "chat_id": checked.chat_id,
                     "text": checked.text,
                     "sent_at": datetime.now(),
+                })
+            )
+        elif isinstance(checked, CreateGroupMessage):
+            await self.dispatch(
+                Event(type="create_group_requested", payload={
+                    "user_id": user_id,
+                    "member_ids": checked.user_ids,
+                    "name": checked.name,
+                    "new_chat_id": uuid.uuid4(),
+                })
+            )
+        elif isinstance(checked, AddMemberMessage):
+            await self.dispatch(
+                Event(type="add_member_requested", payload={
+                    "user_id": user_id,
+                    "chat_id": checked.chat_id,
+                    "new_member_id": checked.user_id,
+                })
+            )
+        elif isinstance(checked, RemoveMemberMessage):
+            await self.dispatch(
+                Event(type="remove_member_requested", payload={
+                    "user_id": user_id,
+                    "chat_id": checked.chat_id,
+                    "leaving_id": checked.user_id,
                 })
             )
 

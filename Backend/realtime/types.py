@@ -20,6 +20,8 @@ class Validate:
     USERNAME_MIN_LENGTH : int = 4
     USERNAME_MAX_LENGTH : int = 20
     MESSAGE_MAX_LENGTH : int = 1000
+    GROUP_NAME_MIN_LENGTH : int = 1
+    GROUP_NAME_MAX_LENGTH : int = 30
 
 class AppState(BaseModel):
     # frozen: nobody can edit a state object. The reducer returns a new one instead.
@@ -57,3 +59,28 @@ class SendMessage(BaseModel):
     type: Literal["send_message"]
     chat_id: uuid.UUID
     text: str = Field(min_length=1, max_length=Validate.MESSAGE_MAX_LENGTH)
+
+class CreateGroupMessage(BaseModel):
+    """Make a group with these people. The sender is added by the server, not listed here.
+
+    The name isn't length-checked here: a bad one should come back as a readable
+    error, not as "that message was the wrong shape".
+    """
+    type: Literal["create_group"]
+    user_ids: list[uuid.UUID]
+    name: str
+
+
+class AddMemberMessage(BaseModel):
+    """Put this person in the group. Anyone already in it may do this; there are no roles."""
+    type: Literal["add_member"]
+    chat_id: uuid.UUID
+    user_id: uuid.UUID
+
+
+class RemoveMemberMessage(BaseModel):
+    """Take this person out of the group. Your own id here means you are leaving."""
+    type: Literal["remove_member"]
+    chat_id: uuid.UUID
+    user_id: uuid.UUID
+

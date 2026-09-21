@@ -95,4 +95,33 @@ export type SendMessageMessage = {
   text: string;
 };
 
-export type ClientMessage = RenameMessage | OpenChatMessage | SendMessageMessage;
+// make a group with these people. We are not in the list: the server adds
+// whoever sent it, from the socket it arrived on.
+export type CreateGroupMessage = {
+  type: 'create_group';
+  user_ids: string[];
+  name: string;
+};
+
+// changing who is in a group. One person per message, so two pages editing at
+// once can't undo each other the way a whole-list update would.
+export type AddMemberMessage = {
+  type: 'add_member';
+  chat_id: string;
+  user_id: string;
+};
+
+// our own id here means we're leaving
+export type RemoveMemberMessage = {
+  type: 'remove_member';
+  chat_id: string;
+  user_id: string;
+};
+
+export type ClientMessage =
+  | RenameMessage
+  | OpenChatMessage
+  | SendMessageMessage
+  | CreateGroupMessage
+  | AddMemberMessage
+  | RemoveMemberMessage;
