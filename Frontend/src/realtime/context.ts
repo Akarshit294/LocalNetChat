@@ -9,7 +9,6 @@ export type Realtime = {
     joinedName: string;
     users: ChatUser[];
     systemLine: string;
-    errorLine: string;
     // chats
     chats: ChatSummary[];
     messages: Record<string, ChatTextMessage[]>;   // by chat id, only what arrived while we were here

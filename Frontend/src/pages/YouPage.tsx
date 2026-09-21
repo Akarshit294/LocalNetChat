@@ -5,7 +5,7 @@ import { useRealtime } from '../realtime/context.ts';
 
 // Your own name, and the way out.
 export default function YouPage() {
-    const { isConnected, joinedName, errorLine, rename, disconnect } = useRealtime();
+    const { isConnected, joinedName, rename, disconnect } = useRealtime();
     const { name, changeName, nameError, status, ready } = useNameCheck(joinedName);
 
     if (!isConnected) {
@@ -24,7 +24,6 @@ export default function YouPage() {
             <NameInput value={name} onChange={changeName} error={nameError} status={status} />
             <button onClick={() => rename(name.trim())} disabled={!canRename}>Rename</button>
             <button onClick={disconnect}>Disconnect</button>
-            {errorLine && <p>{errorLine}</p>}
             <Link to="/people">Around you</Link>
         </>
     );

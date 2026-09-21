@@ -1,6 +1,8 @@
 import { useRef, useState, type ReactNode } from 'react';
+import { toast } from 'react-hot-toast/headless';
 import { ReadyState } from 'react-use-websocket';
 import { useWebSocket } from 'react-use-websocket/dist/lib/use-websocket';
+import Notices from '../components/Notices.tsx';
 import { WS_URL } from '../lib/api.ts';
 import type {
     ChatSummary,
@@ -24,7 +26,6 @@ export default function RealtimeProvider({ children }: { children: ReactNode }) 
     const [myId, setMyId] = useState('');
     const [users, setUsers] = useState<ChatUser[]>([]);
     const [systemLine, setSystemLine] = useState('');
-    const [errorLine, setErrorLine] = useState('');
     const [closeReason, setCloseReason] = useState('');
     const [chats, setChats] = useState<ChatSummary[]>([]);
     // the server relays messages and forgets them, so this is the only copy we have
@@ -52,9 +53,9 @@ export default function RealtimeProvider({ children }: { children: ReactNode }) 
                 } else if (message.type === 'renamed') {
                     // the server accepted it, so this is the name it knows us by now
                     setJoinedName(message.new_name);
-                    setErrorLine('');
                 } else if (message.type === 'error') {
-                    setErrorLine(message.reason);
+                    // it dismisses itself, so nothing has to clear it on the way out
+                    toast.error(message.reason);
                 } else if (message.type === 'chats') {
                     setChats(message.chats);
                 } else if (message.type === 'chat_opened') {
@@ -76,7 +77,7 @@ export default function RealtimeProvider({ children }: { children: ReactNode }) 
                 // everything below belongs to a live connection, so it goes with it
                 setUsers([]);
                 setSystemLine('');
-                setErrorLine('');
+                toast.dismiss();   // whatever was on screen was about a connection we no longer have
                 setJoinedName('');
                 setConnectName('');
                 setMyId('');
@@ -148,7 +149,6 @@ export default function RealtimeProvider({ children }: { children: ReactNode }) 
         joinedName,
         users,
         systemLine,
-        errorLine,
         chats,
         messages,
         unread,
@@ -164,5 +164,10 @@ export default function RealtimeProvider({ children }: { children: ReactNode }) 
         removeMember,
     };
 
-    return <RealtimeContext.Provider value={realtime}>{children}</RealtimeContext.Provider>;
+    return (
+        <RealtimeContext.Provider value={realtime}>
+            <Notices />
+            {children}
+        </RealtimeContext.Provider>
+    );
 }
