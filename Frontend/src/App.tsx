@@ -1,5 +1,6 @@
 import { BrowserRouter, Routes, Route } from 'react-router-dom';
 import Health from './components/Health.tsx';
+import ChatPage from './pages/ChatPage.tsx';
 import JoinPage from './pages/JoinPage.tsx';
 import PeoplePage from './pages/PeoplePage.tsx';
 import YouPage from './pages/YouPage.tsx';
@@ -13,6 +14,7 @@ function App() {
         <Routes>
           <Route path="/" element={<JoinPage />} />
           <Route path="/people" element={<PeoplePage />} />
+          <Route path="/chat" element={<ChatPage />} />
           <Route path="/you" element={<YouPage />} />
           <Route path="/health" element={<Health />} />
         </Routes>

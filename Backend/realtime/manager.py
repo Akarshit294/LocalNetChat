@@ -1,7 +1,15 @@
 from fastapi import WebSocket
 from pydantic import ValidationError
 from realtime.messages import error_message
-from realtime.types import User, AppState, Event, Command, RenameMessage
+from realtime.types import (
+    User,
+    AppState,
+    Event,
+    Command,
+    OpenChatMessage,
+    RenameMessage,
+    SendMessage,
+)
 from realtime.reducer import reduce
 from realtime.validation import is_name_taken
 import uuid
@@ -11,6 +19,8 @@ from datetime import datetime
 # every message type a client may send, and the model that checks its shape
 INCOMING_MESSAGES = {
     "rename": RenameMessage,
+    "open_chat": OpenChatMessage,
+    "send_message": SendMessage,
 }
 
 
@@ -87,9 +97,27 @@ class WebSocketManager:
             await self.send_error(user_id, f"That {message_type} message was the wrong shape")
             return
 
+        # the reducer is pure, so anything random or clock-based is made here
         if isinstance(checked, RenameMessage):
             await self.dispatch(
                 Event(type="rename_requested", payload={"user_id": user_id, "new_name": checked.user_name})
+            )
+        elif isinstance(checked, OpenChatMessage):
+            await self.dispatch(
+                Event(type="open_chat_requested", payload={
+                    "user_id": user_id,
+                    "other_id": checked.user_id,
+                    "new_chat_id": uuid.uuid4(),   # used only if there's no chat yet
+                })
+            )
+        elif isinstance(checked, SendMessage):
+            await self.dispatch(
+                Event(type="message_sent", payload={
+                    "user_id": user_id,
+                    "chat_id": checked.chat_id,
+                    "text": checked.text,
+                    "sent_at": datetime.now(),
+                })
             )
 
     async def send_error(self, user_id: uuid.UUID, reason: str):

@@ -33,12 +33,49 @@ export type ErrorMessage = {
   reason: string;
 };
 
+// a chat member, as the server describes them: their name, and whether they're still here
+export type ChatMember = {
+  id: string;
+  user_name: string;
+  online: boolean;
+};
+
+export type ChatSummary = {
+  id: string;
+  type: 'private' | 'group';
+  name: string | null;
+  members: ChatMember[];
+};
+
+// our own chats. Personal, so it's sent only to us
+export type ChatsMessage = {
+  type: 'chats';
+  chats: ChatSummary[];
+};
+
+// the server made or found the chat we asked for
+export type ChatOpenedMessage = {
+  type: 'chat_opened';
+  chat_id: string;
+};
+
+export type ChatTextMessage = {
+  type: 'message';
+  chat_id: string;
+  from_id: string;
+  text: string;
+  sent_at: string;
+};
+
 export type ServerMessage =
   | UsersMessage
   | SystemMessage
   | WelcomeMessage
   | RenamedMessage
-  | ErrorMessage;
+  | ErrorMessage
+  | ChatsMessage
+  | ChatOpenedMessage
+  | ChatTextMessage;
 
 // What we send to the server.
 
@@ -47,4 +84,15 @@ export type RenameMessage = {
   user_name: string;
 };
 
-export type ClientMessage = RenameMessage;
+export type OpenChatMessage = {
+  type: 'open_chat';
+  user_id: string;
+};
+
+export type SendMessageMessage = {
+  type: 'send_message';
+  chat_id: string;
+  text: string;
+};
+
+export type ClientMessage = RenameMessage | OpenChatMessage | SendMessageMessage;

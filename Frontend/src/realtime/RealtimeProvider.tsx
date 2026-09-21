@@ -1,8 +1,14 @@
-import { useState, type ReactNode } from 'react';
+import { useRef, useState, type ReactNode } from 'react';
 import { ReadyState } from 'react-use-websocket';
 import { useWebSocket } from 'react-use-websocket/dist/lib/use-websocket';
 import { WS_URL } from '../lib/api.ts';
-import type { ChatUser, ClientMessage, ServerMessage } from '../lib/messages.ts';
+import type {
+    ChatSummary,
+    ChatTextMessage,
+    ChatUser,
+    ClientMessage,
+    ServerMessage,
+} from '../lib/messages.ts';
 import { RealtimeContext } from './context.ts';
 
 // Owns the one socket and everything the server tells us. It sits above the
@@ -20,6 +26,13 @@ export default function RealtimeProvider({ children }: { children: ReactNode }) 
     const [systemLine, setSystemLine] = useState('');
     const [errorLine, setErrorLine] = useState('');
     const [closeReason, setCloseReason] = useState('');
+    const [chats, setChats] = useState<ChatSummary[]>([]);
+    // the server relays messages and forgets them, so this is the only copy we have
+    const [messages, setMessages] = useState<Record<string, ChatTextMessage[]>>({});
+    const [unread, setUnread] = useState<Record<string, number>>({});
+    const [openChatId, setOpenChatId] = useState('');
+    // which chat is on screen, readable from inside the socket handler
+    const openChatIdRef = useRef('');
 
     const ws_url = `${WS_URL}?username=${encodeURIComponent(connectName)}`;
 
@@ -42,6 +55,19 @@ export default function RealtimeProvider({ children }: { children: ReactNode }) 
                     setErrorLine('');
                 } else if (message.type === 'error') {
                     setErrorLine(message.reason);
+                } else if (message.type === 'chats') {
+                    setChats(message.chats);
+                } else if (message.type === 'chat_opened') {
+                    selectChat(message.chat_id);
+                } else if (message.type === 'message') {
+                    const chatId = message.chat_id;
+                    setMessages((before) => ({
+                        ...before,
+                        [chatId]: [...(before[chatId] ?? []), message],
+                    }));
+                    if (chatId !== openChatIdRef.current) {
+                        setUnread((before) => ({ ...before, [chatId]: (before[chatId] ?? 0) + 1 }));
+                    }
                 }
             },
             onClose: (event) => {
@@ -54,6 +80,10 @@ export default function RealtimeProvider({ children }: { children: ReactNode }) 
                 setJoinedName('');
                 setConnectName('');
                 setMyId('');
+                setChats([]);
+                setMessages({});
+                setUnread({});
+                selectChat('');
             },
         },
         shouldConnect && !!connectName
@@ -75,6 +105,22 @@ export default function RealtimeProvider({ children }: { children: ReactNode }) 
         sendJsonMessage(message);
     }
 
+    function openChat(userId: string) {
+        const message: ClientMessage = { type: 'open_chat', user_id: userId };
+        sendJsonMessage(message);
+    }
+
+    function selectChat(chatId: string) {
+        openChatIdRef.current = chatId;
+        setOpenChatId(chatId);
+        setUnread((before) => ({ ...before, [chatId]: 0 }));
+    }
+
+    function sendMessage(chatId: string, text: string) {
+        const message: ClientMessage = { type: 'send_message', chat_id: chatId, text };
+        sendJsonMessage(message);
+    }
+
     const realtime = {
         isConnected: readyState === ReadyState.OPEN,
         closeReason,
@@ -83,9 +129,16 @@ export default function RealtimeProvider({ children }: { children: ReactNode }) 
         users,
         systemLine,
         errorLine,
+        chats,
+        messages,
+        unread,
+        openChatId,
         connect,
         disconnect,
         rename,
+        openChat,
+        selectChat,
+        sendMessage,
     };
 
     return <RealtimeContext.Provider value={realtime}>{children}</RealtimeContext.Provider>;

@@ -1,5 +1,5 @@
 import { createContext, useContext } from 'react';
-import type { ChatUser } from '../lib/messages.ts';
+import type { ChatSummary, ChatTextMessage, ChatUser } from '../lib/messages.ts';
 
 // What every page can read and do. The provider fills this in.
 export type Realtime = {
@@ -10,9 +10,17 @@ export type Realtime = {
     users: ChatUser[];
     systemLine: string;
     errorLine: string;
+    // chats
+    chats: ChatSummary[];
+    messages: Record<string, ChatTextMessage[]>;   // by chat id, only what arrived while we were here
+    unread: Record<string, number>;                // by chat id
+    openChatId: string;
     connect: (name: string) => void;
     disconnect: () => void;
     rename: (name: string) => void;
+    openChat: (userId: string) => void;            // message this person
+    selectChat: (chatId: string) => void;
+    sendMessage: (chatId: string, text: string) => void;
 };
 
 export const RealtimeContext = createContext<Realtime | null>(null);
