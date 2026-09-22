@@ -1,144 +1,109 @@
-import { useState } from 'react';
-import { Link, Navigate } from 'react-router-dom';
-import type { ChatSummary } from '../lib/messages.ts';
+import { Navigate, useNavigate } from 'react-router-dom';
+import ChatList from '../components/ChatList.tsx';
+import Conversation from '../components/Conversation.tsx';
+import RouteStrip from '../components/RouteStrip.tsx';
+import { chatMeta, chatTitle } from '../lib/chats.ts';
 import { useRealtime } from '../realtime/context.ts';
+import { useNarrow } from '../ui/hooks.ts';
+import { Button, Label, Page, Panel, PanelHeader, Stage } from '../ui/primitives.tsx';
+import { size } from '../ui/theme.ts';
 
-// A private chat has no name of its own, so it's named after the other people in it.
-function chatTitle(chat: ChatSummary, myId: string) {
-    if (chat.name) {
-        return chat.name;
-    }
-    return chat.members
-        .filter((member) => member.id !== myId)
-        .map((member) => (member.online ? member.user_name : `${member.user_name} (disconnected)`))
-        .join(', ');
-}
-
-function canWrite(chat: ChatSummary, myId: string) {
-    // with nobody else connected there's nowhere for a message to go
-    return chat.members.some((member) => member.id !== myId && member.online);
-}
-
+// Your chats, and whichever one is open.
 export default function ChatPage() {
-    const {
-        isConnected, myId, users, chats, messages, unread, openChatId,
-        selectChat, sendMessage, addMember, removeMember,
-    } = useRealtime();
-    const [draft, setDraft] = useState('');
-    // who's picked in the "add someone" box
-    const [toAdd, setToAdd] = useState('');
+  const {
+    isConnected, myId, users, chats, messages, unread, openChatId,
+    selectChat, sendMessage, addMember, removeMember,
+  } = useRealtime();
+  const navigate = useNavigate();
+  const narrow = useNarrow();
 
-    if (!isConnected) {
-        return <Navigate to="/" replace />;
-    }
+  if (!isConnected) {
+    return <Navigate to="/" replace />;
+  }
 
-    const openChat = chats.find((chat) => chat.id === openChatId);
-    const openMessages = messages[openChatId] ?? [];
-    // everyone online who isn't in this group yet. We're always a member, so we're never here.
-    const addable = openChat
-        ? users.filter((user) => !openChat.members.some((member) => member.id === user.id))
-        : [];
-    // the pick is dropped if that person left or you switched chats, so the box
-    // can never send an id that isn't on offer
-    const pick = addable.some((user) => user.id === toAdd) ? toAdd : '';
+  const openChat = chats.find((chat) => chat.id === openChatId);
+  const openMessages = messages[openChatId] ?? [];
 
-    function nameOf(fromId: string) {
-        if (fromId === myId) {
-            return 'you';
-        }
-        const member = openChat?.members.find((one) => one.id === fromId);
-        return member ? member.user_name : 'someone';
-    }
+  const list = (
+    <Panel style={{ flex: narrow ? '1 1 auto' : '0 0 320px', minWidth: 0 }}>
+      <PanelHeader
+        route="/chat"
+        meta={`${chats.length} ${chats.length === 1 ? 'chat' : 'chats'} open`}
+        hint={narrow ? undefined : 'CLICK TO OPEN'}
+      />
+      {chats.length === 0 ? (
+        <Stage height={200} style={{ display: 'grid', placeItems: 'center', padding: 20 }}>
+          <Label style={{ textAlign: 'center', lineHeight: 1.7 }}>
+            NO CHATS YET
+            <br />
+            PICK SOMEONE ON /people
+          </Label>
+        </Stage>
+      ) : (
+        <ChatList
+          chats={chats}
+          myId={myId}
+          unread={unread}
+          openChatId={openChatId}
+          onSelect={(chatId) => selectChat(chatId)}
+        />
+      )}
+    </Panel>
+  );
 
-    function send() {
-        const text = draft.trim();
-        if (openChat && text) {
-            sendMessage(openChat.id, text);
-            setDraft('');
-        }
-    }
+  const conversation = openChat ? (
+    <Panel style={{ flex: '1 1 auto', minWidth: 0 }}>
+      {narrow ? (
+        <Button kind="quiet" onClick={() => selectChat('')} style={{ marginBottom: 14 }}>
+          ← ALL CHATS
+        </Button>
+      ) : null}
+      <PanelHeader
+        route={chatTitle(openChat, myId)}
+        meta={chatMeta(openChat, myId)}
+        hint="ENTER TO SEND"
+      />
+      <Conversation
+        chat={openChat}
+        myId={myId}
+        users={users}
+        messages={openMessages}
+        onSend={(text) => sendMessage(openChat.id, text)}
+        onAdd={(userId) => addMember(openChat.id, userId)}
+        onRemove={(userId) => removeMember(openChat.id, userId)}
+      />
+    </Panel>
+  ) : (
+    <Panel style={{ flex: '1 1 auto', minWidth: 0 }}>
+      <PanelHeader route="/chat" meta="nothing open" hint="PICK ONE ON THE LEFT" />
+      <Stage height={300} style={{ display: 'grid', placeItems: 'center' }}>
+        <Label>NOTHING OPEN</Label>
+      </Stage>
+      <div style={{ marginTop: 16 }}>
+        <Button kind="quiet" onClick={() => navigate('/people')}>
+          AROUND YOU
+        </Button>
+      </div>
+    </Panel>
+  );
 
-    function add() {
-        if (openChat && pick) {
-            addMember(openChat.id, pick);
-            setToAdd('');
-        }
-    }
-
+  // on a phone there is only room for one of the two, so the open chat wins
+  if (narrow) {
     return (
-        <>
-            <h1>Chats</h1>
-            <Link to="/people">Around you</Link>
-
-            <ul>
-                {chats.map((chat) => (
-                    <li key={chat.id}>
-                        <button onClick={() => selectChat(chat.id)} disabled={chat.id === openChatId}>
-                            {chatTitle(chat, myId)}
-                            {unread[chat.id] ? ` (${unread[chat.id]} new)` : ''}
-                        </button>
-                    </li>
-                ))}
-            </ul>
-            {chats.length === 0 && <p>No chats yet. Pick someone on "Around you" and press Message.</p>}
-
-            {openChat && (
-                <>
-                    <h2>{chatTitle(openChat, myId)}</h2>
-
-                    {/* only a group has members worth listing, and only a group can change them */}
-                    {openChat.type === 'group' && (
-                        <>
-                            <h3>In this group ({openChat.members.length})</h3>
-                            <ul>
-                                {openChat.members.map((member) => (
-                                    <li key={member.id}>
-                                        {member.user_name}
-                                        {member.id === myId && ' (you)'}
-                                        {member.id !== myId && !member.online && ' (disconnected)'}
-                                        {/* no roles yet, so anyone in the group may do this */}
-                                        <button onClick={() => removeMember(openChat.id, member.id)}>
-                                            {member.id === myId ? 'Leave' : 'Remove'}
-                                        </button>
-                                    </li>
-                                ))}
-                            </ul>
-                            {addable.length > 0 && (
-                                <>
-                                    <select value={pick} onChange={(event) => setToAdd(event.target.value)}>
-                                        <option value="">Add someone...</option>
-                                        {addable.map((user) => (
-                                            <option key={user.id} value={user.id}>{user.user_name}</option>
-                                        ))}
-                                    </select>
-                                    <button onClick={add} disabled={!pick}>Add</button>
-                                </>
-                            )}
-                        </>
-                    )}
-
-                    <ul>
-                        {openMessages.map((message) => (
-                            <li key={`${message.sent_at}-${message.from_id}`}>
-                                <b>{nameOf(message.from_id)}:</b> {message.text}
-                            </li>
-                        ))}
-                    </ul>
-                    {canWrite(openChat, myId) ? (
-                        <>
-                            <input
-                                placeholder="Type a message..."
-                                value={draft}
-                                onChange={(event) => setDraft(event.target.value)}
-                                onKeyDown={(event) => event.key === 'Enter' && send()}
-                            />
-                            <button onClick={send} disabled={!draft.trim()}>Send</button>
-                        </>
-                    ) : (
-                        <p>Nobody else here is connected, so you can't send anything.</p>
-                    )}
-                </>
-            )}
-        </>
+      <Page>
+        <RouteStrip />
+        {openChat ? conversation : list}
+      </Page>
     );
+  }
+
+  return (
+    <Page>
+      <RouteStrip />
+      <div style={{ display: 'flex', alignItems: 'flex-start', gap: size.panelGap }}>
+        {list}
+        {conversation}
+      </div>
+    </Page>
+  );
 }

@@ -11,6 +11,7 @@ import type {
     ClientMessage,
     ServerMessage,
 } from '../lib/messages.ts';
+import { noteArrivals } from './arrivals.ts';
 import { RealtimeContext } from './context.ts';
 
 // Owns the one socket and everything the server tells us. It sits above the
@@ -25,6 +26,10 @@ export default function RealtimeProvider({ children }: { children: ReactNode }) 
     // our own id, from the server's welcome. Needed to mark "you", and to address people later.
     const [myId, setMyId] = useState('');
     const [users, setUsers] = useState<ChatUser[]>([]);
+    // who is new, so the page can ping them. Everyone in the first list we get
+    // was already here, so only later arrivals count.
+    const [arrivals, setArrivals] = useState<Record<string, number>>({});
+    const seenIds = useRef<Set<string>>(new Set());
     const [systemLine, setSystemLine] = useState('');
     const [closeReason, setCloseReason] = useState('');
     const [chats, setChats] = useState<ChatSummary[]>([]);
@@ -45,6 +50,7 @@ export default function RealtimeProvider({ children }: { children: ReactNode }) 
                 const message = JSON.parse(event.data) as ServerMessage;
                 if (message.type === 'users') {
                     setUsers(message.users);
+                    setArrivals(noteArrivals(seenIds.current, message.users));
                 } else if (message.type === 'system') {
                     setSystemLine(message.text);
                 } else if (message.type === 'welcome') {
@@ -76,6 +82,8 @@ export default function RealtimeProvider({ children }: { children: ReactNode }) 
                 setCloseReason(event.reason);
                 // everything below belongs to a live connection, so it goes with it
                 setUsers([]);
+                setArrivals({});
+                seenIds.current.clear();
                 setSystemLine('');
                 toast.dismiss();   // whatever was on screen was about a connection we no longer have
                 setJoinedName('');
@@ -148,6 +156,7 @@ export default function RealtimeProvider({ children }: { children: ReactNode }) 
         myId,
         joinedName,
         users,
+        arrivals,
         systemLine,
         chats,
         messages,

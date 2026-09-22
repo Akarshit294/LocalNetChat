@@ -1,3 +1,8 @@
+// The HTTP side of the app. Under ?fake there is no server to ask, so `health`
+// and `/users/check` are answered by the one in ../realtime/mockServer.
+import { net } from '../realtime/mockServer.ts';
+import { FAKE } from './mode.ts';
+
 // The backend runs on the machine that served this page, on port 8000.
 // Built from the page's own address, so the same code works on the laptop
 // (localhost) and on a phone on the same Wi-Fi (the laptop's LAN IP).
@@ -74,7 +79,30 @@ export interface HealthResponse {
   status: string;
 }
 
+// a real request takes a moment, and the name box shows "checking..." while it
+// does. Without this the fake answer lands before you have finished blinking.
+function pause(ms: number) {
+  return new Promise((resolve) => setTimeout(resolve, ms));
+}
+
 export const api = {
-  health: () => request<HealthResponse>('/health'),
-  verifyUsername: (username: string) => request<{ available: boolean }>(`/users/check?username=${encodeURIComponent(username)}`),
+  health: async (): Promise<HealthResponse> => {
+    if (!FAKE) {
+      return request<HealthResponse>('/health');
+    }
+    await pause(180);
+    return { status: 'ok (faked in this tab)' };
+  },
+
+  verifyUsername: async (username: string): Promise<{ available: boolean }> => {
+    if (!FAKE) {
+      return request<{ available: boolean }>(
+        `/users/check?username=${encodeURIComponent(username)}`,
+      );
+    }
+    await pause(240);
+    // like the real endpoint, this doesn't know who's asking, so it reports
+    // your own name as taken
+    return { available: net.isNameFree(username) };
+  },
 };

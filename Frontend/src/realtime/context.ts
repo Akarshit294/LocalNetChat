@@ -8,6 +8,10 @@ export type Realtime = {
     myId: string;
     joinedName: string;
     users: ChatUser[];
+    // user id -> when this page first saw them. The UI pings an arrival, and
+    // "who is new" is the one thing the users list alone can't say.
+    // (This is the lab's only addition to the real context.)
+    arrivals: Record<string, number>;
     systemLine: string;
     // chats
     chats: ChatSummary[];
