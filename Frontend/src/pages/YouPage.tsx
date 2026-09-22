@@ -54,6 +54,7 @@ export default function YouPage() {
               // the check counts us as holding our own name, so it would say
               // "unavailable" about the name we are already called
               status={isOwnName ? '' : status}
+              hint="4–20 characters, one number, no spaces"
               onEnter={() => canRename && rename(name.trim())}
             />
             <Button onClick={() => rename(name.trim())} disabled={!canRename}>

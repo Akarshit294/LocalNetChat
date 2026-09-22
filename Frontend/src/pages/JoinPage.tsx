@@ -1,13 +1,23 @@
 import { useEffect } from 'react';
 import { useNavigate } from 'react-router-dom';
-import NameInput from '../components/NameInput.tsx';
+import JoinScreen from '../components/JoinScreen.tsx';
 import useNameCheck from '../hooks/useNameCheck';
 import { FAKE } from '../lib/mode.ts';
+import { nameNote } from '../lib/names.ts';
 import { useRealtime } from '../realtime/context.ts';
-import { Bar, Button, Label, Page, Panel, PanelHeader } from '../ui/primitives.tsx';
+import { revealStyle } from '../ui/motion.ts';
+import { Label } from '../ui/primitives.tsx';
 import { color, radius, type } from '../ui/theme.ts';
 
-// Pick a name and connect. Once the socket is open, move on to the people page.
+// The door is the JoinScreen artwork exactly as it was designed — its faces,
+// its cast, its words — and this page hands it only what it cannot know: what
+// the name rules are, and what to do when a name passes them.
+//
+// The faces are scenery. They are the one thing in this app that is not
+// somebody on the wi-fi; past this screen every name and face is real.
+//
+// Anything else appears only when there is something to say: the rule you are
+// breaking, or why the server shut the door. Standing still, this is the design.
 export default function JoinPage() {
   const { isConnected, closeReason, connect } = useRealtime();
   const { name, changeName, nameError, status, ready } = useNameCheck();
@@ -20,63 +30,65 @@ export default function JoinPage() {
   }, [isConnected, navigate]);
 
   const canConnect = nameError === null && ready;
+  const note = nameNote(name, nameError, status);
 
   return (
-    <Page>
-      <Panel style={{ marginTop: 40 }}>
-        {/* GAP: style.md's "route name on top" has no answer for "/", and a
-            lone slash reads as a typo. The front door says its name instead. */}
-        <PanelHeader
-          route="localnetchat"
-          meta="one wi-fi, one room. no accounts, and nothing is kept."
-          hint="4–20 CHARACTERS · ONE DIGIT · NO SPACES"
-        />
+    <div style={{ position: 'relative', minHeight: '100dvh' }}>
+      <JoinScreen
+        value={name}
+        onValueChange={changeName}
+        onJoin={() => connect(name.trim())}
+        // a name the server would refuse shakes the box instead of joining
+        blocked={!canConnect}
+        // only ever the rule being broken. A name the server is happy with
+        // leaves the card exactly as it was drawn.
+        note={note.problem ? <span style={{ color: color.ink }}>{note.line}</span> : null}
+      />
 
-        <Bar style={{ display: 'flex', alignItems: 'flex-start', gap: 10, flexWrap: 'wrap' }}>
-          <NameInput
-            value={name}
-            onChange={changeName}
-            error={nameError}
-            status={status}
-            autoFocus
-            onEnter={() => canConnect && connect(name.trim())}
-          />
-          <Button onClick={() => connect(name.trim())} disabled={!canConnect} style={{ marginTop: 0 }}>
-            CONNECT
-          </Button>
-        </Bar>
+      {/* A refused join closes the socket, and this is the only place that says
+          why: 4002 for a broken rule, 4001 for a name already taken. Nothing is
+          drawn here until there is a reason to draw it. */}
+      {closeReason || FAKE ? (
+        <div
+          style={{
+            position: 'absolute',
+            left: 0,
+            right: 0,
+            bottom: 'calc(20px + env(safe-area-inset-bottom, 0px))',
+            zIndex: 2,
+            display: 'flex',
+            flexDirection: 'column',
+            alignItems: 'center',
+            gap: 8,
+            padding: '0 20px',
+            textAlign: 'center',
+          }}
+        >
+          {closeReason ? (
+            <div
+              style={{
+                display: 'flex',
+                alignItems: 'center',
+                gap: 10,
+                padding: '11px 14px',
+                background: color.paper,
+                border: `1px solid ${color.hair}`,
+                borderRadius: radius.bar,
+                ...revealStyle(0),
+              }}
+            >
+              <span
+                style={{ width: 6, height: 6, borderRadius: '50%', background: color.mintDeep, flex: '0 0 auto' }}
+              />
+              <span style={{ ...type.body, fontSize: 12 }}>{closeReason}</span>
+            </div>
+          ) : null}
 
-        {/* a refused join closes the socket, and this is the only place that
-            says why: 4002 for a broken rule, 4001 for a name already taken */}
-        {closeReason ? (
-          <div
-            style={{
-              display: 'flex',
-              alignItems: 'center',
-              gap: 10,
-              marginTop: 14,
-              padding: '11px 14px',
-              background: color.paper,
-              border: `1px solid ${color.hair}`,
-              borderRadius: radius.bar,
-              animation: 'reveal .22s ease-out backwards',
-            }}
-          >
-            <span
-              style={{ width: 6, height: 6, borderRadius: '50%', background: color.mintDeep, flex: '0 0 auto' }}
-            />
-            <span style={{ ...type.body, fontSize: 12 }}>{closeReason}</span>
-          </div>
-        ) : null}
-
-        <Label style={{ marginTop: 16 }}>
-          THE NAME IS CHECKED HERE AS YOU TYPE, AND AGAIN BY THE SERVER
-        </Label>
-        {/* faking is sticky for the tab, so the page has to say when it's on */}
-        {FAKE ? (
-          <Label style={{ marginTop: 6 }}>FAKE SERVER · NOBODY HERE IS REAL · ?fake=0 TO LEAVE</Label>
-        ) : null}
-      </Panel>
-    </Page>
+          {/* faking is sticky for the tab, so it has to say so. Never in the
+              real app, where the door is left alone. */}
+          {FAKE ? <Label>FAKE SERVER · NOBODY HERE IS REAL · ?fake=0 TO LEAVE</Label> : null}
+        </div>
+      ) : null}
+    </div>
   );
 }
