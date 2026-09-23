@@ -24,17 +24,20 @@ export default function YouPage() {
   const canRename = nameError === null && name.trim() !== joinedName && (ready || isOwnName);
 
   return (
-    <Page>
+    // Fills the window like /people, with the same cap, so moving between the
+    // two doesn't change the panel's height.
+    <Page style={{ minHeight: 'min(100dvh, 860px)' }}>
       <RouteStrip />
 
-      <Panel>
+      <Panel style={{ flex: '1 1 auto', display: 'flex', flexDirection: 'column' }}>
         <PanelHeader
           route="/you"
           meta="this device, on this network"
           hint="THE ANIMAL COMES FROM YOUR ID"
         />
 
-        <Stage height={230} style={{ display: 'grid', placeItems: 'center' }}>
+        {/* takes the room the name box leaves, down to just enough for you */}
+        <Stage style={{ flex: '1 1 auto', minHeight: 170, display: 'grid', placeItems: 'center' }}>
           <div style={{ textAlign: 'center', animation: 'reveal .22s ease-out backwards' }}>
             <Avatar id={myId} px={84} state="you" style={{ margin: '0 auto' }} />
             <div style={{ ...type.name, color: color.you, marginTop: 12, fontSize: 13 }}>
@@ -46,7 +49,10 @@ export default function YouPage() {
 
         <Bar style={{ marginTop: 16 }}>
           <Label>DISPLAY NAME</Label>
-          <div style={{ display: 'flex', alignItems: 'flex-start', gap: 10, marginTop: 8, flexWrap: 'wrap' }}>
+          {/* no wrapping: on a phone the box narrows and SAVE stays beside it */}
+          <div style={{ display: 'flex', alignItems: 'flex-start', gap: 10, marginTop: 8 }}>
+            {/* no hint, so the line under the box is empty until there's a
+                broken rule or an answer from the server to show */}
             <NameInput
               value={name}
               onChange={changeName}
@@ -54,7 +60,6 @@ export default function YouPage() {
               // the check counts us as holding our own name, so it would say
               // "unavailable" about the name we are already called
               status={isOwnName ? '' : status}
-              hint="4–20 characters, one number, no spaces"
               onEnter={() => canRename && rename(name.trim())}
             />
             <Button onClick={() => rename(name.trim())} disabled={!canRename}>
@@ -63,8 +68,7 @@ export default function YouPage() {
           </div>
         </Bar>
 
-        <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: 14, marginTop: 16, flexWrap: 'wrap' }}>
-          <Label>LEAVING DROPS YOUR NAME, YOUR CHATS AND EVERYTHING SAID IN THEM</Label>
+        <div style={{ display: 'flex', justifyContent: 'flex-end', marginTop: 16 }}>
           <Button kind="quiet" onClick={disconnect}>
             DISCONNECT
           </Button>
