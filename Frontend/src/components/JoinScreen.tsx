@@ -17,6 +17,7 @@
  *   - one `note` line under the box, for the rule you are breaking
  *   - `blocked`, so a name the server would refuse shakes instead of joining
  *   - `renderAvatar`, so the app draws its own faces from its own sprite sheet
+ *   - a second, upright arrangement of the same pieces, for phones
  */
 
 import { useEffect, useId, useLayoutEffect, useRef, useState } from 'react';
@@ -107,6 +108,61 @@ const LINKS: ReadonlyArray<readonly [number, number, number, number]> = [
   [448, 656, 494, 616],
   [1066, 578, 1206, 646],
 ];
+
+/* ─── LOCAL: the same drawing, stood up ───
+
+   A phone is not a landscape stage, and squeezing this one onto it crops the
+   ring of faces into halves. So the pieces are laid out a second time on a tall
+   stage: the ball and the card keep the exact offsets they were drawn with, and
+   the ring becomes a band above and a band below. Which arrangement is used is
+   not a guess about the device — `fit` measures both and takes whichever comes
+   out bigger, so a laptop always lands on the wide one. */
+
+const TALL_W = 560;
+const TALL_H = 1240;
+
+// Six above the ball, five below. The top row keeps clear of a phone's status
+// bar, and the bottom row stops short of the floor, which is where the page puts
+// a refusal from the server.
+const TALL_SLOT_POINTS: ReadonlyArray<readonly [number, number]> = [
+  [108, 130], [286, 96], [448, 132], [60, 276], [238, 256], [492, 266],
+  [88, 956], [268, 1000], [466, 950], [186, 1062], [398, 1046],
+];
+
+const TALL_PARTICLES: Particle[] = [
+  { x: 150, y: 372, size: 40, blur: 3 },
+  { x: 372, y: 200, size: 13, blur: 0.8 },
+  { x: 196, y: 180, size: 8, blur: 0 },
+  { x: 438, y: 340, size: 15, blur: 1 },
+  { x: 498, y: 318, size: 21, blur: 2 },
+  { x: 66, y: 410, size: 34, blur: 4 },
+  { x: 404, y: 900, size: 8, blur: 0.5 },
+];
+
+const TALL_LINKS: ReadonlyArray<readonly [number, number, number, number]> = [
+  [156, 121, 238, 105],
+  [112, 270, 186, 262],
+  [138, 968, 218, 988],
+  [236, 1090, 348, 1082],
+];
+
+interface Stage {
+  w: number;
+  h: number;
+  slots: Slot[];
+  particles: Particle[];
+  links: ReadonlyArray<readonly [number, number, number, number]>;
+}
+
+const WIDE_STAGE: Stage = { w: STAGE_W, h: STAGE_H, slots: SLOTS, particles: PARTICLES, links: LINKS };
+
+const TALL_STAGE: Stage = {
+  w: TALL_W,
+  h: TALL_H,
+  slots: TALL_SLOT_POINTS.map(([x, y]) => ({ x, y, blur: SLOT_BLUR, opacity: SLOT_OPACITY })),
+  particles: TALL_PARTICLES,
+  links: TALL_LINKS,
+};
 
 /* Ribbons inside the orb (orb-local units, 544 × 544). A "fan" is a set of circles that all touch
    at one pinch point and spread apart along `dir`, which reads as a twisting ribbon of lines. */
@@ -311,6 +367,9 @@ export function JoinScreen({
   const rootRef = useRef<HTMLDivElement>(null);
   const inputRef = useRef<HTMLInputElement>(null);
   const [scale, setScale] = useState(1);
+  // LOCAL: which of the two arrangements is on screen
+  const [tall, setTall] = useState(false);
+  const seen = useRef({ w: 0, h: 0 });
   const [name, setName] = useState('');
   const [touched, setTouched] = useState(false);
   const [shaking, setShaking] = useState(false);
@@ -324,9 +383,25 @@ export function JoinScreen({
       const w = el.clientWidth;
       const h = el.clientHeight;
       if (!w || !h) return;
-      const contain = Math.min(w / STAGE_W, h / STAGE_H);
-      const minimum = Math.min(w / 620, h / 720, 0.62);
-      setScale(Math.min(Math.max(contain, minimum), 1.5));
+
+      // LOCAL: a phone keyboard takes half the screen, and refitting for it
+      // would shrink the whole drawing under the fingers typing into it. So a
+      // height-only change is ignored while the box has focus. Width still
+      // counts, which is what turning the phone over changes.
+      if (w === seen.current.w && h !== seen.current.h && document.activeElement === inputRef.current) return;
+      seen.current = { w, h };
+
+      // LOCAL: wide or upright, whichever comes out bigger. Nothing here asks
+      // what the device is — a laptop simply fits the wide one better.
+      const wide = Math.min(w / STAGE_W, h / STAGE_H);
+      const upright = Math.min(w / TALL_W, h / TALL_H);
+      const useTall = upright > wide;
+      setTall(useTall);
+
+      // Below this the card is narrower than the words printed on it; the
+      // upright stage is drawn to a phone's width, so it rarely gets near.
+      const minimum = useTall ? 0.45 : Math.min(w / 620, h / 720, 0.62);
+      setScale(Math.min(Math.max(useTall ? upright : wide, minimum), 1.5));
     };
     fit();
     const observer = new ResizeObserver(fit);
@@ -358,11 +433,14 @@ export function JoinScreen({
   };
 
   const invalid = touched && shown.trim() === '';
-  const placed = SLOTS.flatMap((slot, i) => {
+  const stage = tall ? TALL_STAGE : WIDE_STAGE;
+  const placed = stage.slots.flatMap((slot, i) => {
     const person = participants[i];
     return person ? [{ slot, person, i }] : [];
   });
-  const rootClass = ['jn-root', animated ? 'jn-animated' : '', className ?? ''].filter(Boolean).join(' ');
+  const rootClass = ['jn-root', animated ? 'jn-animated' : '', tall ? 'jn-tall' : '', className ?? '']
+    .filter(Boolean)
+    .join(' ');
   const inputId = `${uid}-name`;
   const shadowId = `${uid}-shadow`;
   const cutId = `${uid}-cut`;
@@ -374,12 +452,12 @@ export function JoinScreen({
       <div className="jn-stage" style={{ '--jn-scale': scale } as CSSProperties}>
         <div className="jn-decor" aria-hidden="true">
           <div className="jn-dots" />
-          <svg className="jn-links" viewBox={`0 0 ${STAGE_W} ${STAGE_H}`}>
-            {LINKS.map(([x1, y1, x2, y2]) => (
+          <svg className="jn-links" viewBox={`0 0 ${stage.w} ${stage.h}`}>
+            {stage.links.map(([x1, y1, x2, y2]) => (
               <line key={`${x1}-${y1}`} x1={x1} y1={y1} x2={x2} y2={y2} />
             ))}
           </svg>
-          {PARTICLES.map((p, i) => (
+          {stage.particles.map((p, i) => (
             <span
               key={i}
               className="jn-particle"
@@ -559,6 +637,18 @@ const CSS = `
 .jn-join:disabled{cursor:progress;transform:none;filter:none}
 .jn-spinner{width:30px;height:30px;border-radius:50%;border:3px solid rgba(31,42,39,.18);border-top-color:#1f2a27;animation:jn-spin .8s linear infinite}
 .jn-sr{position:absolute;width:1px;height:1px;margin:-1px;padding:0;border:0;overflow:hidden;clip:rect(0 0 0 0);white-space:nowrap}
+/* LOCAL: the upright stage. Only the pieces placed on the stage itself move;
+   everything inside the card is positioned against the card, so the label, the
+   box, the note, the ring and the Join button all come along untouched. The ball
+   and the card keep the offsets they were drawn with — the ring sits 22 inside
+   the ball, the core 48, and the card 37 across and 89 down from it. */
+.jn-tall .jn-stage{width:${TALL_W}px;height:${TALL_H}px;margin:${-TALL_H / 2}px 0 0 ${-TALL_W / 2}px}
+.jn-tall .jn-dots{left:-40px;top:40px;width:640px;height:1160px}
+.jn-tall .jn-links{width:${TALL_W}px;height:${TALL_H}px}
+.jn-tall .jn-orb,.jn-tall .jn-ribbons{left:11px;top:340px}
+.jn-tall .jn-orb-ring{left:33px;top:362px}
+.jn-tall .jn-orb-core{left:59px;top:388px}
+.jn-tall .jn-card{left:48px;top:429px}
 .jn-animated .jn-avatar{animation:jn-float var(--jn-dur,9s) ease-in-out var(--jn-delay,0s) infinite}
 .jn-animated .jn-particle{animation:jn-drift var(--jn-dur,11s) ease-in-out var(--jn-delay,0s) infinite}
 .jn-animated .jn-ribbons{animation:jn-sway 18s ease-in-out infinite alternate}
