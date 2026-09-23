@@ -1,12 +1,10 @@
 import { useEffect, useRef, useState } from 'react';
 import { canWrite, clockOf } from '../lib/chats.ts';
-import type { ChatSummary, ChatTextMessage, ChatUser } from '../lib/messages.ts';
+import type { ChatSummary, ChatTextMessage } from '../lib/messages.ts';
 import { Avatar } from '../ui/Avatar.tsx';
-import { useNarrow } from '../ui/hooks.ts';
 import { revealStyle } from '../ui/motion.ts';
 import { Bar, Button, Field, Label, Stage } from '../ui/primitives.tsx';
 import { color, radius, type } from '../ui/theme.ts';
-import GroupMembers from './GroupMembers.tsx';
 
 // What was said, and the box to say something back.
 //
@@ -16,16 +14,12 @@ import GroupMembers from './GroupMembers.tsx';
 type Props = {
   chat: ChatSummary;
   myId: string;
-  users: ChatUser[];
   messages: ChatTextMessage[];
   onSend: (text: string) => void;
-  onAdd: (userId: string) => void;
-  onRemove: (userId: string) => void;
 };
 
-export default function Conversation({ chat, myId, users, messages, onSend, onAdd, onRemove }: Props) {
+export default function Conversation({ chat, myId, messages, onSend }: Props) {
   const [draft, setDraft] = useState('');
-  const narrow = useNarrow();
   const boxRef = useRef<HTMLDivElement>(null);
 
   // the newest line is the one you want to see, so the transcript sits at the
@@ -54,15 +48,13 @@ export default function Conversation({ chat, myId, users, messages, onSend, onAd
 
   return (
     <>
-      {/* only a group has members worth listing, and only a group can change them */}
-      {chat.type === 'group' ? (
-        <GroupMembers chat={chat} myId={myId} users={users} onAdd={onAdd} onRemove={onRemove} />
-      ) : null}
-
+      {/* takes whatever height the panel has left, and scrolls inside it, so
+          the composer stays on screen however much has been said */}
       <Stage
         scrollRef={boxRef}
         style={{
-          height: narrow ? 320 : 380,
+          flex: '1 1 0',
+          minHeight: 200,
           overflowY: 'auto',
           padding: '16px 16px 18px',
           display: 'flex',
