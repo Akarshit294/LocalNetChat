@@ -5,7 +5,7 @@ import { color, panelShadow, radius, size, stageDots, stageWash, type } from './
 // The pieces every page is built from. No page writes a colour or a radius of
 // its own; if something isn't here, it isn't in the design.
 
-export function Page({ children }: { children: ReactNode }) {
+export function Page({ children, style }: { children: ReactNode; style?: CSSProperties }) {
   const narrow = useNarrow();
   return (
     <main
@@ -16,6 +16,7 @@ export function Page({ children }: { children: ReactNode }) {
         display: 'flex',
         flexDirection: 'column',
         gap: narrow ? 24 : size.panelGap,
+        ...style,
       }}
     >
       {children}

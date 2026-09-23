@@ -4,7 +4,7 @@ import PeopleField from '../components/PeopleField.tsx';
 import RouteStrip from '../components/RouteStrip.tsx';
 import { validateGroupName } from '../lib/validation.ts';
 import { useRealtime } from '../realtime/context.ts';
-import { useNarrow } from '../ui/hooks.ts';
+import { useCanHover } from '../ui/hooks.ts';
 import { Bar, Button, Field, Label, Page, Panel, PanelHeader, Stage } from '../ui/primitives.tsx';
 import { color } from '../ui/theme.ts';
 
@@ -12,7 +12,7 @@ import { color } from '../ui/theme.ts';
 export default function PeoplePage() {
   const { isConnected, users, myId, arrivals, systemLine, openChat, createGroup } = useRealtime();
   const navigate = useNavigate();
-  const narrow = useNarrow();
+  const canHover = useCanHover();
   // null while we're just looking. Making a group turns it into the picked ids,
   // so one piece of state says both "are we picking" and "who so far".
   const [picked, setPicked] = useState<string[] | null>(null);
@@ -56,18 +56,27 @@ export default function PeoplePage() {
     }
   }
 
+  // what you can do to a person depends on what you're pointing with
+  const lookingHint = canHover ? 'HOVER TO HOLD · CLICK TO MESSAGE' : 'TAP TO MESSAGE';
+
   return (
-    <Page>
+    // The page is at least as tall as the window, and the stage grows into
+    // whatever the header and the row under it leave, so the page itself doesn't
+    // scroll. The 860px cap keeps the stage near 560px on a tall screen; any
+    // taller and the ring of people stretches into an oval.
+    <Page style={{ minHeight: 'min(100dvh, 860px)' }}>
       <RouteStrip />
 
-      <Panel>
+      <Panel style={{ flex: '1 1 auto', display: 'flex', flexDirection: 'column' }}>
         <PanelHeader
           route="/people"
           meta={`${users.length} ${users.length === 1 ? 'person' : 'people'} on this network`}
-          hint={picked === null ? 'HOVER TO HOLD · CLICK TO MESSAGE' : "TICK WHO'S IN IT"}
+          hint={picked === null ? lookingHint : "TICK WHO'S IN IT"}
         />
 
-        <Stage height={narrow ? 470 : 440}>
+        {/* below 300px it stops shrinking and the page scrolls instead: any
+            smaller and the people have no room around you */}
+        <Stage style={{ flex: '1 1 auto', minHeight: 300 }}>
           <PeopleField
             users={users}
             myId={myId}

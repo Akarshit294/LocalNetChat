@@ -32,3 +32,17 @@ export function useViewportWidth() {
 export function useNarrow() {
   return useViewportWidth() < NARROW;
 }
+
+// Whether the main pointer can hover: a mouse or a trackpad can, a finger can't.
+// A tap on a phone fires mouseenter and click together, so nothing is held long
+// enough to see, and a hint about hovering would be untrue there.
+const hoverQuery = window.matchMedia('(hover: hover)');
+
+function subscribeHover(onChange: () => void) {
+  hoverQuery.addEventListener('change', onChange);
+  return () => hoverQuery.removeEventListener('change', onChange);
+}
+
+export function useCanHover() {
+  return useSyncExternalStore(subscribeHover, () => hoverQuery.matches);
+}
