@@ -3,14 +3,18 @@
 import { net } from '../realtime/mockServer.ts';
 import { FAKE } from './mode.ts';
 
-// The backend runs on the machine that served this page, on port 8000.
-// Built from the page's own address, so the same code works on the laptop
-// (localhost) and on a phone on the same Wi-Fi (the laptop's LAN IP).
-const backend_port = import.meta.env.VITE_SERVER_PORT;
-const API_BASE = `http://${window.location.hostname}:${backend_port}`;
+// The backend is reached through the server that served this page: `/api/...`
+// and `/ws` on our own origin, which Vite passes on to uvicorn (vite.config.ts).
+// The page is https so that calls can have the camera, and an https page is not
+// allowed to call an http:// or ws:// address.
+//
+// Our own origin is wherever the page was opened from, so the same code works
+// on the laptop (localhost) and on a phone on the same Wi-Fi (the laptop's IP).
+const API_BASE = '/api';
 const REQUEST_TIMEOUT_MS = 10_000;
 
-export const WS_URL = `ws://${window.location.hostname}:${backend_port}/ws`;
+// the page's own address with the scheme swapped: https -> wss, http -> ws
+export const WS_URL = `${window.location.origin.replace(/^http/, 'ws')}/ws`;
 
 export class ApiError extends Error {
   readonly status: number;

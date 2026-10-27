@@ -1,5 +1,6 @@
 import { useEffect, useRef, useState, type ReactNode } from 'react';
 import { toast } from 'react-hot-toast/headless';
+import CallPanel from '../components/CallPanel.tsx';
 import Notices from '../components/Notices.tsx';
 import type {
     ChatSummary,
@@ -11,6 +12,7 @@ import { JOIN_AS, WANTS_DEMO } from '../lib/mode.ts';
 import { noteArrivals } from './arrivals.ts';
 import { RealtimeContext } from './context.ts';
 import { net } from './mockServer.ts';
+import { useCall } from './useCall.ts';
 
 // RealtimeProvider with the socket taken out and ./mockServer put in its place.
 // The same handling of everything that arrives, so a page cannot tell which one
@@ -86,6 +88,7 @@ export default function MockProvider({ children }: { children: ReactNode }) {
     // which chat is on screen, readable from inside the message handler
     const openChatIdRef = useRef(boot.openChatId);
     const attached = useRef(false);
+    const { call, onMessage: onCallMessage, drop: dropCall } = useCall((message) => net.send(message));
 
     // from here on the fake server talks to the page directly. Anything it said
     // between the bootstrap and this effect is waiting, and arrives now.
@@ -100,6 +103,7 @@ export default function MockProvider({ children }: { children: ReactNode }) {
     }, []);
 
     function onMessage(message: ServerMessage) {
+        onCallMessage(message);
         if (message.type === 'users') {
             setUsers(message.users);
             setArrivals(noteArrivals(seenIds.current, message.users));
@@ -146,6 +150,7 @@ export default function MockProvider({ children }: { children: ReactNode }) {
         setMessages({});
         setUnread({});
         selectChat('');
+        dropCall();
     }
 
     function connect(name: string) {
@@ -211,11 +216,13 @@ export default function MockProvider({ children }: { children: ReactNode }) {
         createGroup,
         addMember,
         removeMember,
+        call,
     };
 
     return (
         <RealtimeContext.Provider value={realtime}>
             <Notices />
+            <CallPanel />
             {children}
         </RealtimeContext.Provider>
     );

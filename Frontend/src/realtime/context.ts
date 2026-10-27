@@ -1,5 +1,6 @@
 import { createContext, useContext } from 'react';
 import type { ChatSummary, ChatTextMessage, ChatUser } from '../lib/messages.ts';
+import type { Call } from './useCall.ts';
 
 // What every page can read and do. The provider fills this in.
 export type Realtime = {
@@ -27,6 +28,7 @@ export type Realtime = {
     createGroup: (userIds: string[], name: string) => void;   // a group with us and these people
     addMember: (chatId: string, userId: string) => void;
     removeMember: (chatId: string, userId: string) => void;   // our own id means leaving
+    call: Call;   // the voice or video call in progress, and how to start or end one
 };
 
 export const RealtimeContext = createContext<Realtime | null>(null);

@@ -2,6 +2,7 @@ import { useRef, useState, type ReactNode } from 'react';
 import { toast } from 'react-hot-toast/headless';
 import { ReadyState } from 'react-use-websocket';
 import { useWebSocket } from 'react-use-websocket/dist/lib/use-websocket';
+import CallPanel from '../components/CallPanel.tsx';
 import Notices from '../components/Notices.tsx';
 import { WS_URL } from '../lib/api.ts';
 import type {
@@ -13,6 +14,7 @@ import type {
 } from '../lib/messages.ts';
 import { noteArrivals } from './arrivals.ts';
 import { RealtimeContext } from './context.ts';
+import { useCall } from './useCall.ts';
 
 // Owns the one socket and everything the server tells us. It sits above the
 // routes, so moving between pages never drops the connection.
@@ -48,6 +50,7 @@ export default function RealtimeProvider({ children }: { children: ReactNode }) 
             onMessage: (event) => {
                 // the server sends the whole list again on every change
                 const message = JSON.parse(event.data) as ServerMessage;
+                onCallMessage(message);
                 if (message.type === 'users') {
                     setUsers(message.users);
                     setArrivals(noteArrivals(seenIds.current, message.users));
@@ -93,10 +96,15 @@ export default function RealtimeProvider({ children }: { children: ReactNode }) 
                 setMessages({});
                 setUnread({});
                 selectChat('');
+                dropCall();
             },
         },
         shouldConnect && !!connectName
     );
+
+    // A call is set up over this same socket, so it is given the way to send on it.
+    // Everything else about a call is in useCall.
+    const { call, onMessage: onCallMessage, drop: dropCall } = useCall(sendJsonMessage);
 
     function connect(name: string) {
         setCloseReason('');
@@ -171,11 +179,13 @@ export default function RealtimeProvider({ children }: { children: ReactNode }) 
         createGroup,
         addMember,
         removeMember,
+        call,
     };
 
     return (
         <RealtimeContext.Provider value={realtime}>
             <Notices />
+            <CallPanel />
             {children}
         </RealtimeContext.Provider>
     );

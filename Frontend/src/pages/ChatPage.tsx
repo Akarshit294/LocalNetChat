@@ -4,7 +4,7 @@ import ChatList from '../components/ChatList.tsx';
 import Conversation from '../components/Conversation.tsx';
 import GroupMembers from '../components/GroupMembers.tsx';
 import RouteStrip from '../components/RouteStrip.tsx';
-import { chatMeta, chatTitle } from '../lib/chats.ts';
+import { chatMeta, chatTitle, others } from '../lib/chats.ts';
 import { useRealtime } from '../realtime/context.ts';
 import { useNarrow } from '../ui/hooks.ts';
 import { Button, Label, Page, Panel, PanelHeader, Stage } from '../ui/primitives.tsx';
@@ -18,7 +18,7 @@ const column = { flex: '1 1 auto', minWidth: 0, display: 'flex', flexDirection: 
 export default function ChatPage() {
   const {
     isConnected, myId, users, chats, messages, unread, openChatId,
-    selectChat, sendMessage, addMember, removeMember,
+    selectChat, sendMessage, addMember, removeMember, call,
   } = useRealtime();
   const navigate = useNavigate();
   const narrow = useNarrow();
@@ -78,22 +78,39 @@ export default function ChatPage() {
     </Button>
   ) : null;
 
+  // A call is between two people, so only a private chat offers one, and only
+  // while the other person is here to pick up.
+  const other = openChat?.type === 'private' ? others(openChat, myId)[0] : undefined;
+  const callButtons = other?.online ? (
+    <span style={{ display: 'flex', gap: 8 }}>
+      <Button kind="quiet" onClick={() => call.start(other.id, false)}>
+        VOICE
+      </Button>
+      <Button kind="quiet" onClick={() => call.start(other.id, true)}>
+        VIDEO
+      </Button>
+    </span>
+  ) : null;
+
+  // a group has its members button, a private chat has its call buttons
+  const headerAction = membersButton ?? callButtons;
+
   const conversation = openChat ? (
     <Panel style={column}>
-      {/* on a phone the members button shares the back button's row, rather
+      {/* on a phone the header's action shares the back button's row, rather
           than taking a line of its own under the title */}
       {narrow ? (
         <div style={{ display: 'flex', justifyContent: 'space-between', gap: 10, marginBottom: 14 }}>
           <Button kind="quiet" onClick={() => open('')}>
             ← ALL CHATS
           </Button>
-          {membersButton}
+          {headerAction}
         </div>
       ) : null}
       <PanelHeader
         route={chatTitle(openChat, myId)}
         meta={chatMeta(openChat, myId)}
-        hint={membersButton ? (narrow ? undefined : membersButton) : 'ENTER TO SEND'}
+        hint={narrow ? undefined : headerAction}
       />
       {showMembers ? (
         <GroupMembers

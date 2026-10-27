@@ -18,6 +18,9 @@ export const color = {
   you: 'oklch(40% 0.06 168)',
   // the one tint used to mark your own words, so a bubble never needs a second hue
   mintWash: 'oklch(94.5% 0.03 164)',
+  // GAP: style.md has nothing that sits over a page. This is the ink, thinned,
+  // so the page behind a call goes quiet without disappearing.
+  scrim: 'oklch(28% 0.02 170 / .45)',
 } as const;
 
 export const font = {

@@ -318,6 +318,10 @@ class MockNet {
       case 'remove_member':
         this.removeMember(message.chat_id, message.user_id);
         break;
+      case 'call_offer':
+        // nobody invented here has a camera. They let it ring, then turn it down.
+        this.later(() => this.emit({ type: 'call_end', from_id: message.user_id }), 4000);
+        break;
     }
   }
 

@@ -67,6 +67,24 @@ export type ChatTextMessage = {
   sent_at: string;
 };
 
+// The four notes that set up a call and end it. The sound and the picture never
+// travel this way: these only introduce the two browsers to each other.
+//
+// To the server they are post. It reads who a note is for, and passes it on
+// without looking inside `sdp` or `candidate`.
+type CallNote =
+  // "calling you", and everything my browser can do
+  | { type: 'call_offer'; sdp: string }
+  // "picked up", and what of that I'll use
+  | { type: 'call_answer'; sdp: string }
+  // one address I might be reached at. Several of these, sent as they're found
+  | { type: 'call_candidate'; candidate: RTCIceCandidateInit }
+  // hung up, declined, or cancelled
+  | { type: 'call_end' };
+
+// arriving, a note says who it is from
+type IncomingCallNote = CallNote & { from_id: string };
+
 export type ServerMessage =
   | UsersMessage
   | SystemMessage
@@ -75,7 +93,8 @@ export type ServerMessage =
   | ErrorMessage
   | ChatsMessage
   | ChatOpenedMessage
-  | ChatTextMessage;
+  | ChatTextMessage
+  | IncomingCallNote;
 
 // What we send to the server.
 
@@ -118,10 +137,15 @@ export type RemoveMemberMessage = {
   user_id: string;
 };
 
+// leaving, the same note says who it is for. The server swaps this for from_id,
+// which it takes from the socket the note arrived on.
+type OutgoingCallNote = CallNote & { user_id: string };
+
 export type ClientMessage =
   | RenameMessage
   | OpenChatMessage
   | SendMessageMessage
   | CreateGroupMessage
   | AddMemberMessage
-  | RemoveMemberMessage;
+  | RemoveMemberMessage
+  | OutgoingCallNote;
