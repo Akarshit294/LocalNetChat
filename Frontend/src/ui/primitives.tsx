@@ -1,6 +1,6 @@
 import type { CSSProperties, ReactNode } from 'react';
 import { useHover, useNarrow } from './hooks.ts';
-import { color, panelShadow, radius, size, stageDots, stageWash, type } from './theme.ts';
+import { color, halo, panelShadow, radius, size, stageDots, stageWash, type } from './theme.ts';
 
 // The pieces every page is built from. No page writes a colour or a radius of
 // its own; if something isn't here, it isn't in the design.
@@ -171,10 +171,13 @@ type ButtonProps = {
   kind?: 'primary' | 'quiet';
   style?: CSSProperties;
   title?: string;
+  // for a button that stays down, like the chosen one of a few: tells a screen
+  // reader which one is chosen, since only the colour shows it otherwise
+  pressed?: boolean;
 };
 
 // A real button, for committing a form. Per-row actions use a Chip instead.
-export function Button({ children, onClick, disabled, kind = 'primary', style, title }: ButtonProps) {
+export function Button({ children, onClick, disabled, kind = 'primary', style, title, pressed }: ButtonProps) {
   const { hovered, bind } = useHover();
   const primary = kind === 'primary';
   const lit = hovered && !disabled;
@@ -183,6 +186,7 @@ export function Button({ children, onClick, disabled, kind = 'primary', style, t
       {...bind}
       type="button"
       title={title}
+      aria-pressed={pressed}
       onClick={onClick}
       disabled={disabled}
       style={{
@@ -196,7 +200,7 @@ export function Button({ children, onClick, disabled, kind = 'primary', style, t
         cursor: disabled ? 'default' : 'pointer',
         opacity: disabled ? 0.45 : 1,
         // the same mint halo the "you" ring uses, so hover speaks one language
-        boxShadow: lit ? '0 0 0 4px oklch(72% 0.09 165 / .16)' : 'none',
+        boxShadow: lit ? `0 0 0 4px ${halo}` : 'none',
         transition: 'box-shadow .22s ease-out, opacity .22s ease-out',
         whiteSpace: 'nowrap',
         ...style,

@@ -18,6 +18,7 @@
  *   - `blocked`, so a name the server would refuse shakes instead of joining
  *   - `renderAvatar`, so the app draws its own faces from its own sprite sheet
  *   - a second, upright arrangement of the same pieces, for phones
+ *   - a dark version, switched by the app's light/dark rule (`DARK`, near the end)
  */
 
 import { useEffect, useId, useLayoutEffect, useRef, useState } from 'react';
@@ -591,6 +592,38 @@ export default JoinScreen;
 
 /* ─── Styles ─── */
 
+/* LOCAL: the same scene at night. The page falls to the app's own dark
+   background, the glass turns smoked, and the faces stay on pale discs, like
+   every other face in the app, only dimmer. Only colours change, and only
+   these: the particles, sparks and the Join button glow the same in both, and
+   the ribbon's bands are only thinned, since mint shines harder on the dark.
+   Each rule starts with `&`, because the block is used twice at the end of CSS,
+   once under each of the two things that make the app dark. */
+const DARK = `
+& .jn-root{color:#dae6df;background:radial-gradient(ellipse 80% 70% at 50% 46%,#16211d 0%,#111a17 58%,#0f1714 100%)}
+& .jn-dots{background-image:radial-gradient(circle,rgba(150,184,170,.2) 1.4px,transparent 1.9px)}
+& .jn-links line{stroke:rgba(150,184,170,.16)}
+& .jn-avatar-disc{background:radial-gradient(circle at 38% 30%,#e4ebe8 0%,#d6e1dc 46%,#bfd3ca 100%);box-shadow:0 16px 30px -10px rgba(0,0,0,.55),0 3px 8px rgba(0,0,0,.25),inset 0 -8px 16px rgba(104,191,155,.25),inset 0 1px 2px #fff}
+& .jn-avatar-name{color:#8e9c95}
+& .jn-orb{background:radial-gradient(circle at 60% 36%,rgba(255,255,255,0) 52%,rgba(80,170,134,.3) 78%,rgba(96,190,152,.6) 100%),linear-gradient(160deg,rgba(32,58,49,.7),rgba(22,46,38,.7));box-shadow:inset 0 0 0 1.5px rgba(170,230,205,.22),inset 0 0 0 5px rgba(104,191,155,.12),inset 12px -16px 30px rgba(80,170,134,.3),inset -10px 14px 26px rgba(255,255,255,.05),0 40px 70px -24px rgba(30,120,86,.5),0 0 60px rgba(80,190,145,.2)}
+& .jn-orb-ring{border-color:rgba(170,230,205,.28);box-shadow:0 0 0 1px rgba(104,191,155,.12),inset 0 0 18px rgba(170,230,205,.06)}
+& .jn-orb-core{background:radial-gradient(circle at 40% 24%,rgba(46,66,59,.97) 0%,rgba(32,50,44,.94) 40%,rgba(22,52,41,.92) 100%);box-shadow:0 0 0 1.5px rgba(170,230,205,.2),0 12px 30px rgba(20,100,70,.3),inset 0 -22px 40px rgba(80,170,134,.2)}
+& .jn-band{opacity:.6}
+& .jn-rib circle{stroke:rgba(200,240,222,.3)}
+& .jn-rib .jn-m{stroke:rgba(104,191,155,.6)}
+& .jn-card-shadow>g>path{fill:rgba(0,0,0,.6)}
+& .jn-card-glass{background:linear-gradient(172deg,rgba(40,54,49,.82) 0%,rgba(30,42,38,.76) 48%,rgba(26,44,37,.74) 100%)}
+& .jn-card-edge stop:nth-child(1){stop-opacity:.3}
+& .jn-card-edge stop:nth-child(2){stop-opacity:.08}
+& .jn-label{color:#8e9c95}
+& .jn-input{border-color:#3f8a6d;color:#dae6df;background:linear-gradient(180deg,#0d1411 0%,#111a16 38%,#131d19 70%,#111a16 100%);box-shadow:inset 0 3px 7px rgba(0,0,0,.4),inset 0 0 0 2px rgba(255,255,255,.03),0 0 0 3px rgba(255,255,255,.03),0 12px 24px -8px rgba(30,130,92,.45)}
+& .jn-input::placeholder{color:#a6b5ad}
+& .jn-input:focus{border-color:#68bf9b;box-shadow:inset 0 3px 7px rgba(0,0,0,.35),inset 0 0 0 2px rgba(255,255,255,.03),0 0 0 5px rgba(104,191,155,.2),0 12px 24px -8px rgba(30,130,92,.5)}
+& .jn-input:focus::placeholder{color:#6f7d77}
+& .jn-note{color:#8e9c95}
+& .jn-ring{background:radial-gradient(circle at 50% 30%,rgba(58,80,72,.92) 0%,rgba(38,58,51,.84) 55%,rgba(28,62,49,.84) 100%);box-shadow:inset 0 0 0 1.5px rgba(170,230,205,.2),inset 0 -10px 18px rgba(80,170,134,.22),0 14px 30px -6px rgba(0,0,0,.5)}
+`;
+
 const CSS = `
 .jn-root{position:relative;z-index:0;width:100%;min-height:100vh;min-height:100dvh;overflow:hidden;font-family:var(--jn-font,'IBM Plex Mono',ui-monospace,SFMono-Regular,Menlo,Consolas,monospace);color:#27302e;background:radial-gradient(ellipse 80% 70% at 50% 46%,#fbfcfc 0%,#f6f8f7 58%,#edf0ef 100%);-webkit-font-smoothing:antialiased}
 .jn-root *,.jn-root *::before,.jn-root *::after{box-sizing:border-box}
@@ -660,4 +693,8 @@ const CSS = `
 @keyframes jn-spin{to{transform:rotate(360deg)}}
 @keyframes jn-shake{10%,90%{transform:translateX(-1px)}20%,80%{transform:translateX(2px)}30%,50%,70%{transform:translateX(-5px)}40%,60%{transform:translateX(5px)}}
 @media (prefers-reduced-motion:reduce){.jn-animated .jn-avatar,.jn-animated .jn-particle,.jn-animated .jn-ribbons,.jn-animated .jn-spark{animation:none}}
+/* LOCAL: dark by the app's rule (see GlobalStyle): the device is dark and Light
+   wasn't chosen on /you, or Dark was */
+@media (prefers-color-scheme:dark){:root:not([data-scheme="light"]){${DARK}}}
+:root[data-scheme="dark"]{${DARK}}
 `;

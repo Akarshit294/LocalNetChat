@@ -1,3 +1,4 @@
+import { useState } from 'react';
 import { Navigate } from 'react-router-dom';
 import NameInput from '../components/NameInput.tsx';
 import RouteStrip from '../components/RouteStrip.tsx';
@@ -6,12 +7,26 @@ import { animalOf } from '../lib/animals.ts';
 import { useRealtime } from '../realtime/context.ts';
 import { Avatar } from '../ui/Avatar.tsx';
 import { Bar, Button, Label, Page, Panel, PanelHeader, Stage } from '../ui/primitives.tsx';
+import { chooseScheme, currentScheme, type Scheme } from '../ui/scheme.ts';
 import { color, type } from '../ui/theme.ts';
 
-// Your own name, and the way out.
+const SCHEMES: { scheme: Scheme; label: string }[] = [
+  { scheme: 'system', label: 'SYSTEM' },
+  { scheme: 'light', label: 'LIGHT' },
+  { scheme: 'dark', label: 'DARK' },
+];
+
+// Your own name, how this device shows the page, and the way out.
 export default function YouPage() {
   const { isConnected, joinedName, myId, rename, disconnect } = useRealtime();
   const { name, changeName, nameError, status, ready } = useNameCheck(joinedName);
+  // read from the page itself, which already shows the saved choice
+  const [scheme, setScheme] = useState(currentScheme);
+
+  function pickScheme(next: Scheme) {
+    chooseScheme(next);
+    setScheme(next);
+  }
 
   if (!isConnected) {
     return <Navigate to="/" replace />;
@@ -68,8 +83,21 @@ export default function YouPage() {
           </div>
         </Bar>
 
-        <div style={{ display: 'flex', justifyContent: 'flex-end', marginTop: 16 }}>
-          <Button kind="quiet" onClick={disconnect}>
+        {/* on a phone the two halves wrap, and DISCONNECT keeps to the right */}
+        <div style={{ display: 'flex', flexWrap: 'wrap', alignItems: 'center', gap: 10, marginTop: 16 }}>
+          <div role="group" aria-label="light or dark" style={{ display: 'flex', gap: 6 }}>
+            {SCHEMES.map((option) => (
+              <Button
+                key={option.scheme}
+                kind={option.scheme === scheme ? 'primary' : 'quiet'}
+                pressed={option.scheme === scheme}
+                onClick={() => pickScheme(option.scheme)}
+              >
+                {option.label}
+              </Button>
+            ))}
+          </div>
+          <Button kind="quiet" onClick={disconnect} style={{ marginLeft: 'auto' }}>
             DISCONNECT
           </Button>
         </div>
