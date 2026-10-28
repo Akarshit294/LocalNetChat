@@ -7,6 +7,21 @@
     <!-- The page has a dark version, so a dark device paints the empty page dark
          while the code loads, instead of flashing white first. -->
     <meta name="color-scheme" content="light dark" />
+    <!-- Light or dark chosen on /you wins over the device, and has to be in place
+         before anything is drawn: the app's code arrives later, and until then
+         the empty page is painted in the device's colours. Same key as
+         src/ui/scheme.ts. -->
+    <script>
+      try {
+        const saved = localStorage.getItem('lnc-scheme');
+        if (saved === 'light' || saved === 'dark') {
+          document.documentElement.dataset.scheme = saved;
+          document.querySelector('meta[name="color-scheme"]').content = saved;
+        }
+      } catch {
+        // nothing saved can be read, so the device decides
+      }
+    </script>
     <title>LocalNetChat</title>
     <!-- Bricolage Grotesque for titles, IBM Plex Mono for everything else.
          Both have fallbacks in src/ui/theme.ts, so the page still works offline,

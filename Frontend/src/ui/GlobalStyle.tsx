@@ -26,18 +26,26 @@ const registered = names
 const css = `
   ${registered}
 
-  /* [data-scheme="light"] holds a part of the page in the light whatever the
-     device says. The join screen uses it until it has a dark version. */
+  /* Light unless something says otherwise. data-scheme="light" holds the page
+     in the light whatever the device says: all of it when chosen on /you
+     (see scheme.ts), or just the join screen, until it has a dark version. */
   :root, [data-scheme="light"] {
     color-scheme: light;
     ${variables(palette.light)}
   }
 
+  /* dark when the device is, unless light was chosen */
   @media (prefers-color-scheme: dark) {
-    :root {
+    :root:not([data-scheme="light"]) {
       color-scheme: dark;
       ${variables(palette.dark)}
     }
+  }
+
+  /* dark because it was chosen, whatever the device says */
+  :root[data-scheme="dark"] {
+    color-scheme: dark;
+    ${variables(palette.dark)}
   }
 
   /* Only the variables move, so this one line fades the whole page: every

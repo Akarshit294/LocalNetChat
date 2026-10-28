@@ -171,10 +171,13 @@ type ButtonProps = {
   kind?: 'primary' | 'quiet';
   style?: CSSProperties;
   title?: string;
+  // for a button that stays down, like the chosen one of a few: tells a screen
+  // reader which one is chosen, since only the colour shows it otherwise
+  pressed?: boolean;
 };
 
 // A real button, for committing a form. Per-row actions use a Chip instead.
-export function Button({ children, onClick, disabled, kind = 'primary', style, title }: ButtonProps) {
+export function Button({ children, onClick, disabled, kind = 'primary', style, title, pressed }: ButtonProps) {
   const { hovered, bind } = useHover();
   const primary = kind === 'primary';
   const lit = hovered && !disabled;
@@ -183,6 +186,7 @@ export function Button({ children, onClick, disabled, kind = 'primary', style, t
       {...bind}
       type="button"
       title={title}
+      aria-pressed={pressed}
       onClick={onClick}
       disabled={disabled}
       style={{
