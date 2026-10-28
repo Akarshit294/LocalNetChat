@@ -1,5 +1,5 @@
 import { resolveValue, useToaster } from 'react-hot-toast/headless';
-import { color, radius, type } from '../ui/theme.ts';
+import { color, panelShadow, radius, type } from '../ui/theme.ts';
 
 // Everything the server refused, shown wherever you happen to be standing.
 //
@@ -47,7 +47,7 @@ export default function Notices() {
             border: `1px solid ${color.hair}`,
             borderRadius: radius.bar,
             padding: '11px 14px',
-            boxShadow: '0 1px 2px rgba(31,58,48,.04), 0 18px 40px -28px rgba(31,58,48,.28)',
+            boxShadow: panelShadow,
             animation: 'reveal .22s ease-out backwards',
           }}
         >

@@ -4,6 +4,9 @@
     <meta charset="UTF-8" />
     <link rel="icon" type="image/svg+xml" href="/favicon.svg" />
     <meta name="viewport" content="width=device-width, initial-scale=1.0, viewport-fit=cover" />
+    <!-- The page has a dark version, so a dark device paints the empty page dark
+         while the code loads, instead of flashing white first. -->
+    <meta name="color-scheme" content="light dark" />
     <title>LocalNetChat</title>
     <!-- Bricolage Grotesque for titles, IBM Plex Mono for everything else.
          Both have fallbacks in src/ui/theme.ts, so the page still works offline,

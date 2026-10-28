@@ -1,15 +1,51 @@
-import { color, font } from './theme.ts';
+import { color, font, motion, palette, type ColorName } from './theme.ts';
+
+const names = Object.keys(palette.light) as ColorName[];
+
+// `--ink: oklch(...); --paper: oklch(...); ...` for one palette
+function variables(colors: Record<ColorName, string>) {
+  return names.map((name) => `--${name}: ${colors[name]};`).join(' ');
+}
+
+// Registering a variable as a <color> is what lets it fade. A plain variable is
+// just text to the browser, so it can only jump from one value to the next.
+const registered = names
+  .map((name) => `@property --${name} { syntax: '<color>'; inherits: true; initial-value: ${palette.light[name]}; }`)
+  .join('\n');
 
 // The one stylesheet in the app.
 //
-// style.md says inline styles only, keyframes excepted. Four more things can't
+// style.md says inline styles only, keyframes excepted. Five more things can't
 // be written inline at all, so they live here and nowhere else:
 //   - @keyframes (the exception the guide already grants)
 //   - ::placeholder
 //   - :focus-visible, because a page you can't tab through isn't finished
 //   - prefers-reduced-motion, because this page never stops moving otherwise
-// GAP: style.md should say this out loud, or rule 6 reads as a ban on all four.
+//   - prefers-color-scheme, because only the browser knows the device went dark
+// GAP: style.md should say this out loud, or rule 6 reads as a ban on all five.
 const css = `
+  ${registered}
+
+  /* [data-scheme="light"] holds a part of the page in the light whatever the
+     device says. The join screen uses it until it has a dark version. */
+  :root, [data-scheme="light"] {
+    color-scheme: light;
+    ${variables(palette.light)}
+  }
+
+  @media (prefers-color-scheme: dark) {
+    :root {
+      color-scheme: dark;
+      ${variables(palette.dark)}
+    }
+  }
+
+  /* Only the variables move, so this one line fades the whole page: every
+     background, border, shadow and word that uses them follows along. */
+  :root {
+    transition: ${names.map((name) => `--${name} ${motion.scheme}`).join(', ')};
+  }
+
   * { box-sizing: border-box; }
 
   html, body, #root { height: 100%; }

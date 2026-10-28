@@ -33,7 +33,9 @@ export default function JoinPage() {
   const note = nameNote(name, nameError, status);
 
   return (
-    <div style={{ position: 'relative', minHeight: '100dvh' }}>
+    // The artwork has only ever been drawn in the light, so this page stays
+    // light even on a dark device, and so do the words laid over it.
+    <div data-scheme="light" style={{ position: 'relative', minHeight: '100dvh' }}>
       <JoinScreen
         value={name}
         onValueChange={changeName}
