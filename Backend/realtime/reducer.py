@@ -6,6 +6,7 @@ from realtime.messages import (
     system_message,
     users_message,
     welcome_message,
+    call_message,
 )
 from realtime.types import AppState, Chat, Command, Event
 from realtime.validation import is_name_taken, validate_group_name, validate_username
@@ -89,6 +90,7 @@ def reduce(state: AppState, event: Event):
                     message=system_message(f"{user.user_name} has joined the chat"),
                 ),
             ]
+    
     elif event_type == "user_left":
         user_id = event.payload.get("user_id")
         if user_id and user_id in state.users:
@@ -418,6 +420,29 @@ def reduce(state: AppState, event: Event):
                 )
                 for member_id in chat.members
                 if member_id in state.users
+            ]
+
+    elif event_type == "call_note_sent":
+        user_id = event.payload.get("user_id")
+        to_id = event.payload.get("to_id")
+        note = event.payload.get("note")
+        if user_id and to_id and note and user_id in state.users:
+            if to_id not in state.users:
+                return state, [
+                    Command(
+                        type="send",
+                        user_id=user_id,
+                        message=error_message("They are not here any more")
+                    )
+                ]
+
+            # post: passed on to the one person it's for.
+            return state, [
+                Command(
+                    type="send",
+                    user_id=to_id,
+                    message=call_message(user_id, note)
+                )
             ]
 
     # nothing to change: hand back the state we were given

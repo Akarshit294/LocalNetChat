@@ -84,3 +84,25 @@ class RemoveMemberMessage(BaseModel):
     chat_id: uuid.UUID
     user_id: uuid.UUID
 
+
+# A call's four notes. user_id is who the note is for; who it's from comes
+# from the socket. The server passes sdp and candidate on without looking inside.
+
+class SendCallOfferMessage(BaseModel):
+    type: Literal["call_offer"]
+    user_id: uuid.UUID
+    sdp: str
+
+class SendCallAnswerMessage(BaseModel):
+    type: Literal["call_answer"]
+    user_id: uuid.UUID
+    sdp: str
+
+class SendCallCandidateMessage(BaseModel):
+    type: Literal["call_candidate"]
+    user_id: uuid.UUID
+    candidate: dict
+
+class EndCallMessage(BaseModel):
+    type: Literal["call_end"]
+    user_id: uuid.UUID

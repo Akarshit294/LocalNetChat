@@ -178,9 +178,10 @@ call: the page ends its own call when the other person drops out of `users`, and
 turns a second caller away itself by answering `call_end`. If the server can't
 deliver a note it answers `error`, and a caller still waiting for an answer hangs up.
 
-> As of 9 Oct 2026 the page speaks all of this and the server relays none of it: the
-> owner is writing that half. Until then every `call_*` gets
-> `Unknown message type` back.
+On the server all four take one path, because it does the same thing with each:
+one event, `call_note_sent`, carrying the sender (from the socket), `to_id`, and
+the whole note; one reducer branch; one builder, `call_message`, which copies the
+note without `user_id` and puts `from_id` last so the socket's id always wins.
 
 **`error` says only what went wrong, not what it refused.** There is no id tying it
 back to the request, so the page can't put a message beside the button that caused
