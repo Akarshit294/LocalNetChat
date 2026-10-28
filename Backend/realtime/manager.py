@@ -8,9 +8,13 @@ from realtime.types import (
     Command,
     AddMemberMessage,
     CreateGroupMessage,
+    EndCallMessage,
     OpenChatMessage,
     RemoveMemberMessage,
     RenameMessage,
+    SendCallAnswerMessage,
+    SendCallCandidateMessage,
+    SendCallOfferMessage,
     SendMessage,
 )
 from realtime.reducer import reduce
@@ -27,6 +31,10 @@ INCOMING_MESSAGES = {
     "create_group": CreateGroupMessage,
     "add_member": AddMemberMessage,
     "remove_member": RemoveMemberMessage,
+    "call_offer": SendCallOfferMessage,
+    "call_answer": SendCallAnswerMessage,
+    "call_candidate": SendCallCandidateMessage,
+    "call_end": EndCallMessage,
 }
 
 
@@ -148,6 +156,19 @@ class WebSocketManager:
                     "user_id": user_id,
                     "chat_id": checked.chat_id,
                     "leaving_id": checked.user_id,
+                })
+            )
+        elif isinstance(checked, (
+            SendCallOfferMessage, 
+            SendCallAnswerMessage, 
+            SendCallCandidateMessage, 
+            EndCallMessage
+        )):
+            await self.dispatch(
+                Event(type="call_note_sent", payload={
+                    "user_id": user_id,
+                    "to_id": checked.user_id,
+                    "note": checked.model_dump(mode="json")
                 })
             )
 

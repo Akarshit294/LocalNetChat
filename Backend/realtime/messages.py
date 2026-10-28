@@ -83,3 +83,10 @@ def chat_message(chat_id: uuid.UUID, from_id: uuid.UUID, text: str, sent_at: dat
         "text": text,
         "sent_at": sent_at.isoformat(),
     }
+
+def call_message(user_id: uuid.UUID, note: dict):
+    passed_on = {key: value for key, value in note.items() if key != "user_id"}
+    return {
+        **passed_on,
+        "from_id": str(user_id),
+    }
