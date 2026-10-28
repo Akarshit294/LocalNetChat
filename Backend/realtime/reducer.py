@@ -428,13 +428,15 @@ def reduce(state: AppState, event: Event):
         note = event.payload.get("note")
         if user_id and to_id and note and user_id in state.users:
             if to_id not in state.users:
-                return state, [
-                    Command(
-                        type="send",
-                        user_id=user_id,
-                        message=error_message("They are not here any more")
-                    )
-                ]
+                if note["type"] == "call_offer":
+                    return state, [
+                        Command(
+                            type="send",
+                            user_id=user_id,
+                            message=error_message("They are not here any more")
+                        )
+                    ]
+                return state, []  # the other side is gone, so the note is dropped
 
             # post: passed on to the one person it's for.
             return state, [

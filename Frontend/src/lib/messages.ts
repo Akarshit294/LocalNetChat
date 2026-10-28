@@ -67,6 +67,12 @@ export type ChatTextMessage = {
   sent_at: string;
 };
 
+// Why a call ended, when it was more than someone pressing hang up. The server
+// passes it on unread; the page that gets it decides what to say.
+export type CallEndReason =
+  | 'busy'        // already in another call, so this one was turned away
+  | 'no_answer';  // it rang too long, and the caller gave up
+
 // The four notes that set up a call and end it. The sound and the picture never
 // travel this way: these only introduce the two browsers to each other.
 //
@@ -79,8 +85,8 @@ type CallNote =
   | { type: 'call_answer'; sdp: string }
   // one address I might be reached at. Several of these, sent as they're found
   | { type: 'call_candidate'; candidate: RTCIceCandidateInit }
-  // hung up, declined, or cancelled
-  | { type: 'call_end' };
+  // hung up, declined, or cancelled. A reason says it was something else
+  | { type: 'call_end'; reason?: CallEndReason };
 
 // arriving, a note says who it is from
 type IncomingCallNote = CallNote & { from_id: string };

@@ -139,7 +139,7 @@ Every message, both directions, is JSON with a `type`.
 | `call_offer` | `user_id`, `sdp` | calling this person. `sdp` is my browser's offer |
 | `call_answer` | `user_id`, `sdp` | picked up. `sdp` is my browser's answer |
 | `call_candidate` | `user_id`, `candidate` | one address I might be reached at. Several per call |
-| `call_end` | `user_id` | hung up, declined, or cancelled |
+| `call_end` | `user_id`, `reason?` | hung up, declined, or cancelled. `reason` says it was something else: `busy`, `no_answer` |
 
 | server → page | fields | who gets it |
 |---|---|---|
@@ -154,7 +154,7 @@ Every message, both directions, is JSON with a `type`.
 | `call_offer` | `from_id`, `sdp` | only the person being called |
 | `call_answer` | `from_id`, `sdp` | only the caller |
 | `call_candidate` | `from_id`, `candidate` | only the other end of the call |
-| `call_end` | `from_id` | only the other end of the call |
+| `call_end` | `from_id`, `reason?` | only the other end of the call |
 
 Incoming messages are matched to a Pydantic model by their `type`
 (`INCOMING_MESSAGES` in `manager.py`). Wrong shape or unknown type gets an `error`
@@ -174,9 +174,19 @@ note to that person with `from_id` in its place (taken from the socket, like eve
 other identity here), and never looks inside. `sdp` is a string of a few thousand
 characters; `candidate` is an object (`candidate`, `sdpMid`, `sdpMLineIndex`,
 `usernameFragment`) to pass through whole. The server keeps no record of who is in a
-call: the page ends its own call when the other person drops out of `users`, and
-turns a second caller away itself by answering `call_end`. If the server can't
-deliver a note it answers `error`, and a caller still waiting for an answer hangs up.
+call: the page ends its own call when the other person drops out of `users`, turns
+a second caller away itself by answering `call_end` with `reason: "busy"`, and stops
+ringing after 30 seconds with `reason: "no_answer"`. `reason` is a plain string the
+server passes on unread, so the page can add one without a server change; it's on
+the `call_end` form only because Pydantic drops any field a form doesn't name.
+
+Only an **offer** to someone who isn't here gets `error` back, and a caller still
+waiting for an answer hangs up on it. Any other note for someone who's gone is about
+a call that's already over, so it's dropped quietly rather than toasting a stray error.
+
+When the socket closes mid-call the page ends the call too, and says "Lost the
+server, so the call ended". The sound and picture could carry on without it, but
+nothing could hang up properly any more.
 
 On the server all four take one path, because it does the same thing with each:
 one event, `call_note_sent`, carrying the sender (from the socket), `to_id`, and
@@ -214,9 +224,14 @@ it. Fine for a notice; a correlation id is the fix if that changes.
 - **`/users/check` doesn't know who's asking**, so it reports your own name as taken.
   The page allows a case-only rename anyway; the server skips you by id.
 - **The LAN**: Vite needs `--host`, or the page isn't reachable from a phone. On
-  Windows the firewall must allow Node on the current network profile. The laptop's
+  Windows the firewall must allow Node on the current network profile. On Linux
+  (Arch) firewalld puts the Wi-Fi in the `public` zone, which lets in only ssh, so
+  the phone's request is dropped before Vite sees it. Open the port for the session
+  with `sudo firewall-cmd --zone=public --add-port=5173/tcp`; it closes again on
+  reboot. Don't make it permanent on `public`, which is also the café zone. Only
+  5173 needs opening: the phone never talks to 8000. The laptop's
   address changes, so look it up rather than assuming — `Get-NetIPAddress` on
-  Windows, `ipconfig getifaddr en0` on macOS.
+  Windows, `ipconfig getifaddr en0` on macOS, `ip -4 -br addr` on Linux.
 - **The page never dials the backend itself.** It calls its own origin — `/api/...`
   and `/ws` — and Vite forwards those to uvicorn on `127.0.0.1` (`vite.config.ts`).
   An https page may not call an `http://` or `ws://` address, so this is what lets
@@ -266,7 +281,8 @@ Worth re-testing whenever calls change: a video call and a voice call end to end
 (picture and sound arriving, both ways), mute and camera-off as seen from the other
 end, decline, cancel, a third person ringing someone already in a call, a slow or
 refused camera prompt on either side, cancelling while the prompt is still up, the
-other tab closing mid-call, and the server going away mid-call.
+other tab closing mid-call, the server going away mid-call, a call nobody answers
+(30 s), and an answered call lasting past 30 s.
 
 Worth re-testing whenever the reducer changes: a refused join, a rename to someone
 else's name, a rename that only changes case, a name with a space in it, a message

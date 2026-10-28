@@ -1,6 +1,6 @@
 import { useRef, useState } from 'react';
 import { toast } from 'react-hot-toast/headless';
-import type { ClientMessage, ServerMessage } from '../lib/messages.ts';
+import type { CallEndReason, ClientMessage, ServerMessage } from '../lib/messages.ts';
 
 // One voice or video call between two people, peer to peer.
 //
@@ -44,6 +44,21 @@ const NO_CALL: CallView = {
     muted: false,
     cameraOff: false,
 };
+
+// how long a call rings before the caller gives up, as a phone does
+const RING_LIMIT_MS = 30_000;
+
+// What to tell someone whose call the other side ended. A plain call_end is a
+// hang-up; a reason says it was something else.
+function endedBecause(reason: CallEndReason | undefined) {
+    if (reason === 'busy') {
+        return "They're on another call";
+    }
+    if (reason === 'no_answer') {
+        return 'You missed a call';
+    }
+    return 'The call was ended from the other side';
+}
 
 // the same call as the objects that carry it
 type Live = {
@@ -141,6 +156,14 @@ export function useCall(send: (message: ClientMessage) => void) {
                 const offer = await pc.createOffer();   // the browser writes the whole SDP
                 await pc.setLocalDescription(offer);    // and from here it starts finding candidates
                 send({ type: 'call_offer', user_id: peerId, sdp: offer.sdp! });
+                // If this offer is still unanswered when the time is up, stop
+                // ringing them. If it was answered or ended, nothing happens.
+                setTimeout(() => {
+                    if (live.current.pc === pc && pc.signalingState === 'have-local-offer') {
+                        toast('No answer');
+                        end('no_answer');
+                    }
+                }, RING_LIMIT_MS);
             }
         } catch (error) {
             fail(pc, error);
@@ -165,10 +188,18 @@ export function useCall(send: (message: ClientMessage) => void) {
     }
 
     // Hanging up, and also declining a call or cancelling one we started.
+    // It takes nothing: it's handed straight to onClick, which would pass the
+    // click in as a reason.
     function hangUp() {
+        end();
+    }
+
+    // Tell the other side it's over, and why if there's more to say than "hung up".
+    function end(reason?: CallEndReason) {
         const { peerId } = live.current;
         if (peerId) {
-            send({ type: 'call_end', user_id: peerId });
+            // an undefined reason is left out of the JSON altogether
+            send({ type: 'call_end', user_id: peerId, reason });
             cleanUp();
         }
     }
@@ -231,7 +262,7 @@ export function useCall(send: (message: ClientMessage) => void) {
         } else if (message.type === 'call_offer') {
             if (peerId) {
                 // already in a call, so this one is turned away
-                send({ type: 'call_end', user_id: message.from_id });
+                send({ type: 'call_end', user_id: message.from_id, reason: 'busy' });
                 return;
             }
             const incoming = openConnection(message.from_id);
@@ -264,15 +295,23 @@ export function useCall(send: (message: ClientMessage) => void) {
                 // one road that turns out to be unusable isn't a reason to end the call
                 pc.addIceCandidate(message.candidate).catch((error) => console.error('Bad candidate:', error));
             } else {
-                toast('The call was ended from the other side');
+                toast(endedBecause(message.reason));
                 cleanUp();
             }
         }
     }
 
+    // The socket has gone. The call could carry on without it, but nothing could
+    // end it properly any more, so it ends here, saying why. If the server went,
+    // the other side lost their socket at the same moment and says the same.
+    function drop() {
+        if (live.current.peerId) {
+            toast('Lost the server, so the call ended');
+        }
+        cleanUp();
+    }
+
     const call: Call = { ...view, start, pickUp, hangUp, toggleMute, toggleCamera };
 
-    // `drop` ends the call here without telling the other side, for when the
-    // socket that would have carried the news has gone
-    return { call, onMessage, drop: cleanUp };
+    return { call, onMessage, drop };
 }

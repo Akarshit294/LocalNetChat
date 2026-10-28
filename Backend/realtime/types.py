@@ -106,3 +106,4 @@ class SendCallCandidateMessage(BaseModel):
 class EndCallMessage(BaseModel):
     type: Literal["call_end"]
     user_id: uuid.UUID
+    reason: str | None = None

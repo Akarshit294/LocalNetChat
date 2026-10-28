@@ -168,7 +168,7 @@ class WebSocketManager:
                 Event(type="call_note_sent", payload={
                     "user_id": user_id,
                     "to_id": checked.user_id,
-                    "note": checked.model_dump(mode="json")
+                    "note": checked.model_dump(mode="json", exclude_unset=True)
                 })
             )
 
