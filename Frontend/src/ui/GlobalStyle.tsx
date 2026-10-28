@@ -26,10 +26,10 @@ const registered = names
 const css = `
   ${registered}
 
-  /* Light unless something says otherwise. data-scheme="light" holds the page
-     in the light whatever the device says: all of it when chosen on /you
-     (see scheme.ts), or just the join screen, until it has a dark version. */
-  :root, [data-scheme="light"] {
+  /* Light unless something says otherwise. data-scheme on <html> is the choice
+     made on /you (see scheme.ts), and wins over the device either way. The join
+     screen's artwork keeps its own colours, and follows the same rule. */
+  :root {
     color-scheme: light;
     ${variables(palette.light)}
   }
