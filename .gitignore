@@ -8,3 +8,6 @@ Frontend/dist-ssr/
 Backend/.venv/
 Backend/.env
 __pycache__/
+
+# Claude Code: local settings and worktrees
+.claude/
