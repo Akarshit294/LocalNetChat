@@ -40,7 +40,7 @@ def find_private_chat(state: AppState, first_id, second_id):
     return None
 
 
-def file_refusal(state: AppState, owner_id, chat_id):
+def file_upload_refusal(state: AppState, owner_id, chat_id):
     """Why this person can't share a file into this chat, or None if they can.
 
     The upload route asks first, so it can turn a request away before reading
@@ -53,6 +53,17 @@ def file_refusal(state: AppState, owner_id, chat_id):
     if not any(member_id != owner_id and member_id in state.users for member_id in chat.members):
         return "Nobody in this chat is online"
     return None
+
+
+def can_download(state: AppState, user_id, file_id):
+    """May this person fetch this file? Only if they're in the chat it was shared into.
+
+    The chat comes from the file itself, never from the request, so nobody can
+    name a chat of their own to get past the check.
+    """
+    file = state.files.get(file_id)
+    chat = state.chats.get(file.chat_id) if file else None
+    return bool(chat and user_id in chat.members)
 
 
 def reduce(state: AppState, event: Event):
@@ -478,7 +489,7 @@ def reduce(state: AppState, event: Event):
         if file and file.owner_id in state.users:
             # no error message here: the upload was an HTTP request, and its
             # answer says what went wrong
-            if file_refusal(state, file.owner_id, file.chat_id):
+            if file_upload_refusal(state, file.owner_id, file.chat_id):
                 return state, []
 
             chat = state.chats[file.chat_id]

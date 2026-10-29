@@ -1,12 +1,25 @@
-from fastapi import APIRouter, Header, HTTPException, Request
+from fastapi import APIRouter, Header, HTTPException, Request, Response
 import uuid
 from realtime.manager import ws_manager
-from realtime.reducer import file_refusal
+from realtime.reducer import can_download, file_upload_refusal
 from realtime.types import SharedFile, Validate, Event
 from realtime.validation import user_for_token, validate_file_name
 from datetime import datetime
 
 router = APIRouter()
+
+
+# HTTP's half of "who is this?": read the header, and answer 401 if nobody.
+# The pure half, whose token this is, is user_for_token in validation.py.
+def who_is_asking(authorization: str | None) -> uuid.UUID:
+    """The user this request is from, by its token. 401 if there's no valid one."""
+    scheme, _, token = (authorization or "").partition(" ")
+    user_id = user_for_token(ws_manager.state, token) if scheme.lower() == "bearer" else None
+    if user_id is None:
+        raise HTTPException(status_code=401, detail="Invalid or missing token",
+                            headers={"WWW-Authenticate": "Bearer"})
+    return user_id
+
 
 @router.post("/files", status_code=201)
 async def share_file(
@@ -19,18 +32,11 @@ async def share_file(
 ):
     """Share a file into a chat. The body is the file's bytes, nothing wrapped around them."""
     # 1. who is it? An HTTP request has no socket to say, so the token does
-    scheme, _, token = (authorization or "").partition(" ")
-    user_id = user_for_token(ws_manager.state, token) if scheme.lower() == "bearer" else None
-    if user_id is None:
-        raise HTTPException(
-            status_code=401,
-            detail="Join the chat first to share files.",
-            headers={"WWW-Authenticate": "Bearer"},
-        )
+    user_id = who_is_asking(authorization)
 
     # 2. may they share into this chat? Asked before the body is read, so a
     # stranger is turned away without us reading 50 MB of theirs
-    refusal = file_refusal(ws_manager.state, user_id, chat_id)
+    refusal = file_upload_refusal(ws_manager.state, user_id, chat_id)
     if refusal:
         raise HTTPException(status_code=403, detail=refusal)
 
@@ -74,7 +80,25 @@ async def share_file(
     if shared_file.id not in ws_manager.state.files:
         raise HTTPException(
             status_code=403,
-            detail=file_refusal(ws_manager.state, user_id, chat_id) or "The file couldn't be shared",
+            detail=file_upload_refusal(ws_manager.state, user_id, chat_id) or "The file couldn't be shared",
         )
 
     return {"file_id": str(shared_file.id)}
+
+
+@router.get("/files/{file_id}")
+async def get_file(
+    file_id: uuid.UUID,
+    authorization: str | None = Header(default=None),   # Authorization: Bearer <token>
+):
+    """Fetch a file. The body is its bytes, nothing wrapped around them."""
+    user_id = who_is_asking(authorization)
+
+    # one answer for "no such file" and "not yours", so a stranger can't learn
+    # which files exist. GitHub does the same for a private repo you can't see.
+    if not can_download(ws_manager.state, user_id, file_id):
+        raise HTTPException(status_code=404, detail="No such file")
+
+    shared_file = ws_manager.state.files[file_id]
+    # Content-Type and Content-Length go in the headers; Response sets the length
+    return Response(content=shared_file.data, media_type=shared_file.content_type)

@@ -70,7 +70,7 @@ Backend/
 ├── routes/                 the shell: HTTP and socket entry points only
 │   ├── health.py           GET /health
 │   ├── users.py            GET /users (debug), GET /users/check?username=
-│   ├── files.py            POST /files: share a file into a chat. The bytes come over HTTP
+│   ├── files.py            POST /files, GET /files/{id}: a file's bytes, in and out, over HTTP
 │   └── websocket.py        /ws: accept, receive loop, cleanup in finally
 └── realtime/
     ├── types.py            User, Chat, SharedFile, AppState, Event, Command, and the incoming message models
@@ -178,6 +178,7 @@ everything behind it. An HTTP request gets its own connection.
 | HTTP (the page calls `/api/...`) | carries | answers |
 |---|---|---|
 | `POST /files?chat_id=&name=` | `Authorization: Bearer <token>`; the body is the file's raw bytes; `Content-Type` is its type | `201 {file_id}` · `401` no or unknown token · `403` not your chat, or nobody else in it online · `400` bad name · `413` over 50 MB |
+| `GET /files/{file_id}` | `Authorization: Bearer <token>` | `200` the raw bytes, with the file's `Content-Type` · `401` · `404` no such file, **or not yours**: one answer, so a stranger can't learn which files exist |
 
 **On HTTP, identity comes from the token**, because a request has no socket the
 server knows. Each join gets a random token, sent only in `welcome`, and gone when
@@ -185,12 +186,18 @@ that person leaves. A `user_id` in the request would do instead only if ids were
 secret, and they aren't: `users` sends everyone's to everyone.
 
 A file is kept in memory, in `AppState.files`, until the person who shared it
-leaves. The route asks `file_refusal()` before reading the body, so a stranger is
+leaves. The route asks `file_upload_refusal()` before reading the body, so a stranger is
 turned away without 50 MB being read, then counts while reading because
-`Content-Length` can be missing or lie. The reducer asks `file_refusal()` again
+`Content-Length` can be missing or lie. The reducer asks `file_upload_refusal()` again
 under the lock, and the route answers by whether the file landed, the way
 `connect()` does after a join. A new state shares the bytes with the old one, so
 holding them in state costs nothing on each change.
+
+A download asks `can_download()`, which takes the chat from the **file**, never from
+the request. A chat id the page sends would let someone name a chat of their own
+and pass. The rules in `reducer.py` return reasons or yes/no, never status codes;
+the route picks the code. `who_is_asking()` is HTTP's half of identity (header,
+401) and lives in the route file; `user_for_token()` is the pure half.
 
 **The four `call_*` notes are post.** The server reads `user_id`, sends the same
 note to that person with `from_id` in its place (taken from the socket, like every
