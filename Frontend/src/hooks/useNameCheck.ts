@@ -7,34 +7,47 @@ import useDebounce from './useDebounce';
 // says it's free. Used on the join page and on the you page.
 export default function useNameCheck(initialName: string = '') {
     const [name, setName] = useState(initialName);
-    const [status, setStatus] = useState('');
-    const [ready, setReady] = useState(false);
+    // The server's last answer, and the name it was about. It only counts while
+    // that name is still the one in the box: an answer about what you typed a
+    // moment ago says nothing about what's there now.
+    const [answer, setAnswer] = useState({ name: '', status: '' });
     const nameError = validateUsername(name);
     const debouncedName = useDebounce(name, 500);
 
     useEffect(() => {
+        // a newer check replaces this one, and if this one's answer comes back
+        // last it would overwrite the newer answer, so it's dropped
+        let replaced = false;
+
         async function verifyUsername() {
-            setStatus('checking...');
+            setAnswer({ name: debouncedName, status: 'checking...' });
             try {
                 const data = await api.verifyUsername(debouncedName);
-                setStatus(data.available ? 'available' : 'unavailable');
-                setReady(data.available);
+                if (!replaced) {
+                    setAnswer({ name: debouncedName, status: data.available ? 'available' : 'unavailable' });
+                }
             } catch (err) {
                 console.error('Username verification failed:', err);
-                setStatus('unreachable');
+                if (!replaced) {
+                    setAnswer({ name: debouncedName, status: 'unreachable' });
+                }
             }
         }
 
         if (debouncedName && !validateUsername(debouncedName)) {
             verifyUsername();
         }
+        return () => {
+            replaced = true;
+        };
     }, [debouncedName]);
 
-    function changeName(value: string) {
-        setName(value);
-        setReady(false);   // the old answer was about the old name
-        setStatus('');
-    }
-
-    return { name, changeName, nameError, status, ready };
+    // Only a hint: both pages let a name through while it's still being checked,
+    // because the server checks again and says why if it refuses.
+    return {
+        name,
+        changeName: setName,
+        nameError,
+        status: answer.name === name ? answer.status : '',
+    };
 }

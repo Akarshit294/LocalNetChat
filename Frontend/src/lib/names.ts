@@ -26,5 +26,7 @@ export function nameNote(value: string, error: string | null, status: string, hi
     line: problem || answer || hint,
     problem: problem !== null,
     free: problem === null && status === 'available',
+    // not a broken rule, but just as much a reason the name can't be used
+    taken: problem === null && status === 'unavailable',
   };
 }

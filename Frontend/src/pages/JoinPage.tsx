@@ -20,7 +20,7 @@ import { color, radius, type } from '../ui/theme.ts';
 // breaking, or why the server shut the door. Standing still, this is the design.
 export default function JoinPage() {
   const { isConnected, closeReason, connect } = useRealtime();
-  const { name, changeName, nameError, status, ready } = useNameCheck();
+  const { name, changeName, nameError, status } = useNameCheck();
   const navigate = useNavigate();
 
   useEffect(() => {
@@ -29,7 +29,11 @@ export default function JoinPage() {
     }
   }, [isConnected, navigate]);
 
-  const canConnect = nameError === null && ready;
+  // Only a known problem holds you back: a broken rule, or the server having
+  // already said the name is taken. A name still being checked goes through,
+  // because the server checks again at the door and says why if it refuses.
+  // Waiting for the check meant a quick Enter just shook the box.
+  const canConnect = nameError === null && status !== 'unavailable';
   const note = nameNote(name, nameError, status);
 
   return (
@@ -40,9 +44,10 @@ export default function JoinPage() {
         onJoin={() => connect(name.trim())}
         // a name the server would refuse shakes the box instead of joining
         blocked={!canConnect}
-        // only ever the rule being broken. A name the server is happy with
-        // leaves the card exactly as it was drawn.
-        note={note.problem ? <span style={{ color: color.ink }}>{note.line}</span> : null}
+        // only ever why the box would shake: the rule being broken, or the
+        // server's word that someone has the name. A name the server is happy
+        // with leaves the card exactly as it was drawn.
+        note={note.problem || note.taken ? <span style={{ color: color.ink }}>{note.line}</span> : null}
       />
 
       {/* A refused join closes the socket, and this is the only place that says

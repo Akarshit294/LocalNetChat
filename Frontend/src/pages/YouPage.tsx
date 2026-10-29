@@ -19,7 +19,7 @@ const SCHEMES: { scheme: Scheme; label: string }[] = [
 // Your own name, how this device shows the page, and the way out.
 export default function YouPage() {
   const { isConnected, joinedName, myId, rename, disconnect } = useRealtime();
-  const { name, changeName, nameError, status, ready } = useNameCheck(joinedName);
+  const { name, changeName, nameError, status } = useNameCheck(joinedName);
   // read from the page itself, which already shows the saved choice
   const [scheme, setScheme] = useState(currentScheme);
 
@@ -35,8 +35,11 @@ export default function YouPage() {
   // the name check counts us as holding our own name, so changing only its case
   // always reads as "unavailable". The server allows it, since it skips us by id.
   const isOwnName = name.trim().toLowerCase() === joinedName.toLowerCase();
-  // nothing to rename to unless the name is valid, free, and actually different
-  const canRename = nameError === null && name.trim() !== joinedName && (ready || isOwnName);
+  // Something to rename to: valid, actually different, and not already known to
+  // be someone else's. A name still being checked can be saved, as on the join
+  // page: the server checks again and says why if it refuses.
+  const canRename =
+    nameError === null && name.trim() !== joinedName && (isOwnName || status !== 'unavailable');
 
   return (
     // Fills the window like /people, with the same cap, so moving between the
