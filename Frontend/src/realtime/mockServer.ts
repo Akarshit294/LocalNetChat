@@ -95,6 +95,9 @@ class MockNet {
   // knows everyone, so it is the thing that should hand them out without
   // replacement. Here that means choosing ids whose tiles are still free.
   private takenTiles = new Set<number>();
+  // files shared here, by id. A download hands back the very same Blob, since
+  // there is no network to send it across.
+  private files = new Map<string, { blob: Blob; chatId: string }>();
 
   constructor() {
     this.seed();
@@ -233,7 +236,8 @@ class MockNet {
     this.meId = this.freeId(newId('me'));
     this.people.set(this.meId, { id: this.meId, user_name: wanted, online: true, bot: false });
 
-    this.emit({ type: 'welcome', user_id: this.meId, user_name: wanted });
+    // a token like the real welcome's, though nothing here ever checks it
+    this.emit({ type: 'welcome', user_id: this.meId, user_name: wanted, token: 'fake' });
     this.sendUsers();
     this.sendChats();
     this.sendSystem(`${wanted} has joined the chat`);
@@ -288,9 +292,44 @@ class MockNet {
         this.chats.delete(id);
       }
     }
+    // and what we shared goes with us, as it does on the real server
+    this.files.clear();
     this.meId = '';
     this.wire?.onClose('');
     this.wire = null;
+  }
+
+  // POST /files. The same two checks as file_upload_refusal on the real server,
+  // and the same "file" note to the page when it lands. The name and size were
+  // already checked by the page before it got here.
+  shareFile(chatId: string, file: File): { file_id: string } | { status: number; refused: string } {
+    const chat = this.chats.get(chatId);
+    if (!this.meId || !chat || !chat.members.includes(this.meId)) {
+      return { status: 403, refused: "That chat isn't yours" };
+    }
+    if (!chat.members.some((id) => id !== this.meId && this.people.get(id)?.online)) {
+      return { status: 403, refused: 'Nobody in this chat is online' };
+    }
+    const fileId = `file-${Date.now()}-${this.files.size}`;
+    this.files.set(fileId, { blob: file, chatId });
+    this.emit({
+      type: 'file',
+      chat_id: chatId,
+      file_id: fileId,
+      from_id: this.meId,
+      name: file.name.trim(),
+      content_type: file.type || 'application/octet-stream',
+      size: file.size,
+      sent_at: new Date().toISOString(),
+    });
+    return { file_id: fileId };
+  }
+
+  // GET /files/{id}: only from inside the file's chat, and nothing at all otherwise
+  fileBlob(fileId: string): Blob | null {
+    const file = this.files.get(fileId);
+    const chat = file ? this.chats.get(file.chatId) : undefined;
+    return file && chat && chat.members.includes(this.meId) ? file.blob : null;
   }
 
   // ------------------------------------------------------------- receiving

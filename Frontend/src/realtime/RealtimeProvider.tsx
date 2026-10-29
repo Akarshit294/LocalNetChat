@@ -4,10 +4,11 @@ import { ReadyState } from 'react-use-websocket';
 import { useWebSocket } from 'react-use-websocket/dist/lib/use-websocket';
 import CallPanel from '../components/CallPanel.tsx';
 import Notices from '../components/Notices.tsx';
-import { WS_URL } from '../lib/api.ts';
+import { api, reasonOf, WS_URL } from '../lib/api.ts';
+import { saveBlob } from '../lib/files.ts';
 import type {
+    ChatEntry,
     ChatSummary,
-    ChatTextMessage,
     ChatUser,
     ClientMessage,
     ServerMessage,
@@ -27,6 +28,9 @@ export default function RealtimeProvider({ children }: { children: ReactNode }) 
     const [joinedName, setJoinedName] = useState('');
     // our own id, from the server's welcome. Needed to mark "you", and to address people later.
     const [myId, setMyId] = useState('');
+    // Our secret for HTTP requests, from the welcome. A ref, not state: nothing is
+    // drawn from it, and it must never end up on screen or in the context.
+    const token = useRef('');
     const [users, setUsers] = useState<ChatUser[]>([]);
     // who is new, so the page can ping them. Everyone in the first list we get
     // was already here, so only later arrivals count.
@@ -36,7 +40,7 @@ export default function RealtimeProvider({ children }: { children: ReactNode }) 
     const [closeReason, setCloseReason] = useState('');
     const [chats, setChats] = useState<ChatSummary[]>([]);
     // the server relays messages and forgets them, so this is the only copy we have
-    const [messages, setMessages] = useState<Record<string, ChatTextMessage[]>>({});
+    const [messages, setMessages] = useState<Record<string, ChatEntry[]>>({});
     const [unread, setUnread] = useState<Record<string, number>>({});
     const [openChatId, setOpenChatId] = useState('');
     // which chat is on screen, readable from inside the socket handler
@@ -59,6 +63,7 @@ export default function RealtimeProvider({ children }: { children: ReactNode }) 
                 } else if (message.type === 'welcome') {
                     setMyId(message.user_id);
                     setJoinedName(message.user_name);
+                    token.current = message.token;
                 } else if (message.type === 'renamed') {
                     // the server accepted it, so this is the name it knows us by now
                     setJoinedName(message.new_name);
@@ -69,7 +74,8 @@ export default function RealtimeProvider({ children }: { children: ReactNode }) 
                     setChats(message.chats);
                 } else if (message.type === 'chat_opened') {
                     selectChat(message.chat_id);
-                } else if (message.type === 'message') {
+                } else if (message.type === 'message' || message.type === 'file') {
+                    // a shared file is a line of the conversation like any other
                     const chatId = message.chat_id;
                     setMessages((before) => ({
                         ...before,
@@ -92,6 +98,7 @@ export default function RealtimeProvider({ children }: { children: ReactNode }) 
                 setJoinedName('');
                 setConnectName('');
                 setMyId('');
+                token.current = '';   // the server has already forgotten it
                 setChats([]);
                 setMessages({});
                 setUnread({});
@@ -158,6 +165,26 @@ export default function RealtimeProvider({ children }: { children: ReactNode }) 
         sendJsonMessage(message);
     }
 
+    // A file goes up over HTTP, not this socket: one big upload here would hold
+    // up every chat message behind it. Nothing is added to the conversation from
+    // here. The server's "file" note does that, for us as for everyone.
+    async function shareFile(chatId: string, file: File) {
+        try {
+            await api.shareFile(token.current, chatId, file);
+        } catch (error) {
+            toast.error(reasonOf(error));
+        }
+    }
+
+    // fetched into this tab's memory first, then handed to the browser to save
+    async function downloadFile(fileId: string, name: string) {
+        try {
+            saveBlob(await api.fetchFile(token.current, fileId), name);
+        } catch (error) {
+            toast.error(reasonOf(error));
+        }
+    }
+
     const realtime = {
         isConnected: readyState === ReadyState.OPEN,
         closeReason,
@@ -179,6 +206,8 @@ export default function RealtimeProvider({ children }: { children: ReactNode }) 
         createGroup,
         addMember,
         removeMember,
+        shareFile,
+        downloadFile,
         call,
     };
 

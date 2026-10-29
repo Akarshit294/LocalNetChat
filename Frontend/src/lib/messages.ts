@@ -21,6 +21,9 @@ export type WelcomeMessage = {
   type: 'welcome';
   user_id: string;
   user_name: string;
+  // our secret for HTTP requests, which have no socket to say who sent them.
+  // Sent as `Authorization: Bearer <token>`, and dead once we disconnect.
+  token: string;
 };
 
 export type RenamedMessage = {
@@ -67,6 +70,22 @@ export type ChatTextMessage = {
   sent_at: string;
 };
 
+// Someone shared a file into a chat. Only what to show: the bytes themselves
+// are fetched over HTTP, from GET /files/{file_id}, when somebody asks.
+export type ChatFileMessage = {
+  type: 'file';
+  chat_id: string;
+  file_id: string;
+  from_id: string;
+  name: string;
+  content_type: string;
+  size: number;   // bytes
+  sent_at: string;
+};
+
+// one line of a conversation: something said, or a file shared
+export type ChatEntry = ChatTextMessage | ChatFileMessage;
+
 // Why a call ended, when it was more than someone pressing hang up. The server
 // passes it on unread; the page that gets it decides what to say.
 export type CallEndReason =
@@ -100,6 +119,7 @@ export type ServerMessage =
   | ChatsMessage
   | ChatOpenedMessage
   | ChatTextMessage
+  | ChatFileMessage
   | IncomingCallNote;
 
 // What we send to the server.

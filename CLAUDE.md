@@ -110,7 +110,8 @@ Frontend/src/
 ├── pages/                  JoinPage "/", PeoplePage "/people", ChatPage "/chat", YouPage "/you"
 ├── components/             NameInput, Notices, CallPanel, Health
 ├── hooks/                  useDebounce, useNameCheck
-└── lib/                    api.ts (fetch wrapper), messages.ts (wire types), validation.ts
+└── lib/                    api.ts (fetch wrapper, file upload and download), messages.ts (wire
+                            types), validation.ts, files.ts (sizes, and saving a downloaded file)
 ```
 
 **The rule that keeps it working**: the socket lives in `RealtimeProvider`, above the
@@ -253,6 +254,28 @@ it. Fine for a notice; a correlation id is the fix if that changes.
   so every door behaves the same.
 - **`/users/check` doesn't know who's asking**, so it reports your own name as taken.
   The page allows a case-only rename anyway; the server skips you by id.
+- **`/users/check` is a hint, not a gate**, on the join page and on /you. Join and
+  SAVE only hold back a name that breaks a rule or that the check has already called
+  taken. A name still being checked goes through, because the server checks again
+  and says why if it refuses. Waiting for the check made a quick Enter do nothing.
+  An answer only counts for the name it was about (`useNameCheck` keeps the two
+  together), so a slow answer about an earlier name can't land on the current one.
+  A taken name is shown on the join page as well as a broken rule (`nameNote`'s
+  `taken`): the box shakes for either, so it says why for either.
+- **The token lives in a ref in the provider**, never in state or the context: nothing
+  is drawn from it, and a page has no reason to hold it. The provider's `shareFile`
+  and `downloadFile` attach it. A downloaded file is fetched into the tab as a Blob,
+  then saved through a temporary `blob:` link (`saveBlob` in `lib/files.ts`).
+- **`request()` labels only a string body as JSON.** A `File` body is sent with the
+  browser's own label for it (`image/png`), which is what the server stores.
+- **Vite can miss the second of two quick writes to one file.** It re-reads on the
+  first change, and a second write a moment later can land after that read, so the
+  page runs half the edit (`onShare is not a function` came from this: `ChatPage`
+  had the first edit and not the second). Fresh Vite servers are unaffected, so a
+  throwaway test can pass while the owner's page fails. If the page acts like old
+  code, compare `curl -sk https://localhost:5173/src/<file>` with the disk (the
+  served copy has double quotes and compiled JSX), `touch` the stale file, and
+  reload the page.
 - **The LAN**: Vite needs `--host`, or the page isn't reachable from a phone. On
   Windows the firewall must allow Node on the current network profile. On Linux
   (Arch) firewalld puts the Wi-Fi in the `public` zone, which lets in only ssh, so
@@ -318,6 +341,14 @@ Worth re-testing whenever the reducer changes: a refused join, a rename to someo
 else's name, a rename that only changes case, a name with a space in it, a message
 into a chat you're not in, an empty or over-long message, a member dropping mid-chat,
 adding someone who has just left, and the last person leaving a group.
+
+Worth re-testing whenever files change: a text file and a binary one downloaded byte
+for byte, a name with a space, a file over 50 MB (refused by the page, never sent),
+the file counting as unread in a chat that isn't open, the sharer leaving (lines
+turn to GONE, no DOWNLOAD), and someone outside the chat asking for it (404). In
+headless Chrome, hold the `Browser.setDownloadBehavior` connection open for the
+whole run: the setting ends with that connection, and downloads then land in the
+real `~/Downloads`. A file is picked with `DOM.setFileInputFiles` on the hidden input.
 
 The reducer is pure, so an awkward state is often quicker to check by calling
 `reduce()` directly with a hand-built `AppState` than by driving sockets to it.

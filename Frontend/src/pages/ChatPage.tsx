@@ -18,7 +18,7 @@ const column = { flex: '1 1 auto', minWidth: 0, display: 'flex', flexDirection: 
 export default function ChatPage() {
   const {
     isConnected, myId, users, chats, messages, unread, openChatId,
-    selectChat, sendMessage, addMember, removeMember, call,
+    selectChat, sendMessage, addMember, removeMember, shareFile, downloadFile, call,
   } = useRealtime();
   const navigate = useNavigate();
   const narrow = useNarrow();
@@ -125,7 +125,10 @@ export default function ChatPage() {
           chat={openChat}
           myId={myId}
           messages={openMessages}
+          onlineIds={new Set(users.map((user) => user.id))}
           onSend={(text) => sendMessage(openChat.id, text)}
+          onShare={(file) => shareFile(openChat.id, file)}
+          onDownload={downloadFile}
         />
       )}
     </Panel>

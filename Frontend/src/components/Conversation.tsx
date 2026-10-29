@@ -1,26 +1,36 @@
-import { useEffect, useRef, useState } from 'react';
+import { useEffect, useRef, useState, type ChangeEvent } from 'react';
+import { toast } from 'react-hot-toast/headless';
 import { canWrite, clockOf } from '../lib/chats.ts';
-import type { ChatSummary, ChatTextMessage } from '../lib/messages.ts';
+import { sizeOf } from '../lib/files.ts';
+import type { ChatEntry, ChatFileMessage, ChatSummary } from '../lib/messages.ts';
+import { FILE_MAX_BYTES, validateFileName } from '../lib/validation.ts';
 import { Avatar } from '../ui/Avatar.tsx';
 import { revealStyle } from '../ui/motion.ts';
 import { Bar, Button, Field, Label, Stage } from '../ui/primitives.tsx';
 import { color, radius, type } from '../ui/theme.ts';
 
-// What was said, and the box to say something back.
+// What was said and shared, and the box to say something back.
 //
 // Messages are relayed and never stored, so this is everything that arrived
 // while this page was connected. Reloading loses it, which is true of the app.
+// A file's bytes stay on the server until whoever shared it leaves, so a file
+// line can outlive the file it points to.
 
 type Props = {
   chat: ChatSummary;
   myId: string;
-  messages: ChatTextMessage[];
+  messages: ChatEntry[];
+  onlineIds: Set<string>;   // who is connected now: a shared file goes when its sharer does
   onSend: (text: string) => void;
+  onShare: (file: File) => Promise<void>;
+  onDownload: (fileId: string, name: string) => Promise<void>;
 };
 
-export default function Conversation({ chat, myId, messages, onSend }: Props) {
+export default function Conversation({ chat, myId, messages, onlineIds, onSend, onShare, onDownload }: Props) {
   const [draft, setDraft] = useState('');
+  const [sharing, setSharing] = useState(false);
   const boxRef = useRef<HTMLDivElement>(null);
+  const pickerRef = useRef<HTMLInputElement>(null);
 
   // the newest line is the one you want to see, so the transcript sits at the
   // bottom whenever it grows or you switch chats
@@ -43,6 +53,29 @@ export default function Conversation({ chat, myId, messages, onSend }: Props) {
     if (text) {
       onSend(text);
       setDraft('');
+    }
+  }
+
+  // The same two rules the server holds, checked here first so a file that would
+  // be refused is never uploaded at all. The server checks again regardless.
+  async function share(event: ChangeEvent<HTMLInputElement>) {
+    const file = event.target.files?.[0];
+    // emptied at once, so picking the same file a second time still counts
+    event.target.value = '';
+    if (!file) {
+      return;
+    }
+    const problem =
+      validateFileName(file.name) ?? (file.size > FILE_MAX_BYTES ? 'That file is over 50 MB' : null);
+    if (problem) {
+      toast.error(problem);
+      return;
+    }
+    setSharing(true);
+    try {
+      await onShare(file);
+    } finally {
+      setSharing(false);
     }
   }
 
@@ -75,7 +108,7 @@ export default function Conversation({ chat, myId, messages, onSend }: Props) {
 
           return (
             <div
-              key={`${message.sent_at}-${message.from_id}-${index}`}
+              key={message.type === 'file' ? message.file_id : `${message.sent_at}-${message.from_id}-${index}`}
               style={{
                 display: 'flex',
                 flexDirection: 'column',
@@ -108,9 +141,18 @@ export default function Conversation({ chat, myId, messages, onSend }: Props) {
                     border: `1px solid ${color.hair}`,
                     background: mine ? color.mintWash : color.paper,
                     overflowWrap: 'anywhere',
+                    minWidth: 0,
                   }}
                 >
-                  {message.text}
+                  {message.type === 'file' ? (
+                    <FileLine
+                      file={message}
+                      gone={!onlineIds.has(message.from_id)}
+                      onDownload={onDownload}
+                    />
+                  ) : (
+                    message.text
+                  )}
                 </div>
               </div>
 
@@ -127,6 +169,17 @@ export default function Conversation({ chat, myId, messages, onSend }: Props) {
 
       {writable ? (
         <Bar style={{ marginTop: 14, display: 'flex', alignItems: 'center', gap: 10 }}>
+          {/* the browser's own file picker, opened by the FILE button: an input
+              can't be styled, but it can be clicked from somewhere that can */}
+          <input ref={pickerRef} type="file" hidden onChange={(event) => { void share(event); }} />
+          <Button
+            kind="quiet"
+            onClick={() => pickerRef.current?.click()}
+            disabled={sharing}
+            title="share a file with this chat, up to 50 MB"
+          >
+            {sharing ? 'SENDING…' : 'FILE'}
+          </Button>
           <Field
             value={draft}
             onChange={setDraft}
@@ -145,5 +198,50 @@ export default function Conversation({ chat, myId, messages, onSend }: Props) {
         </Bar>
       )}
     </>
+  );
+}
+
+// A shared file in the conversation: what it is, and a way to fetch it while it
+// still exists. The server drops a file when the person who shared it leaves.
+function FileLine({
+  file,
+  gone,
+  onDownload,
+}: {
+  file: ChatFileMessage;
+  gone: boolean;
+  onDownload: (fileId: string, name: string) => Promise<void>;
+}) {
+  const [fetching, setFetching] = useState(false);
+
+  async function download() {
+    setFetching(true);
+    try {
+      await onDownload(file.file_id, file.name);
+    } finally {
+      setFetching(false);
+    }
+  }
+
+  // "octet-stream" is the label for "bytes, kind unknown", which says nothing
+  // worth reading
+  const kind = file.content_type === 'application/octet-stream' ? 'FILE' : file.content_type.toUpperCase();
+
+  return (
+    <div style={{ display: 'flex', alignItems: 'center', gap: 12, flexWrap: 'wrap' }}>
+      <div style={{ minWidth: 0 }}>
+        <div>{file.name}</div>
+        <Label style={{ marginTop: 2 }}>
+          {sizeOf(file.size)} · {kind}
+        </Label>
+      </div>
+      {gone ? (
+        <Label>GONE: THEY LEFT</Label>
+      ) : (
+        <Button kind="quiet" onClick={() => { void download(); }} disabled={fetching}>
+          {fetching ? 'FETCHING…' : 'DOWNLOAD'}
+        </Button>
+      )}
+    </div>
   );
 }

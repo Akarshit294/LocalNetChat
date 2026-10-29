@@ -2,9 +2,11 @@ import { useEffect, useRef, useState, type ReactNode } from 'react';
 import { toast } from 'react-hot-toast/headless';
 import CallPanel from '../components/CallPanel.tsx';
 import Notices from '../components/Notices.tsx';
+import { api, reasonOf } from '../lib/api.ts';
+import { saveBlob } from '../lib/files.ts';
 import type {
+    ChatEntry,
     ChatSummary,
-    ChatTextMessage,
     ChatUser,
     ServerMessage,
 } from '../lib/messages.ts';
@@ -34,7 +36,7 @@ function bootState() {
         users: [] as ChatUser[],
         systemLine: '',
         chats: [] as ChatSummary[],
-        messages: {} as Record<string, ChatTextMessage[]>,
+        messages: {} as Record<string, ChatEntry[]>,
         unread: {} as Record<string, number>,
         openChatId: '',
     };
@@ -56,7 +58,7 @@ function bootState() {
         } else if (message.type === 'chat_opened') {
             state.openChatId = message.chat_id;
             state.unread = { ...state.unread, [message.chat_id]: 0 };
-        } else if (message.type === 'message') {
+        } else if (message.type === 'message' || message.type === 'file') {
             const chatId = message.chat_id;
             state.messages = {
                 ...state.messages,
@@ -82,7 +84,7 @@ export default function MockProvider({ children }: { children: ReactNode }) {
     const [systemLine, setSystemLine] = useState(boot.systemLine);
     const [closeReason, setCloseReason] = useState('');
     const [chats, setChats] = useState<ChatSummary[]>(boot.chats);
-    const [messages, setMessages] = useState<Record<string, ChatTextMessage[]>>(boot.messages);
+    const [messages, setMessages] = useState<Record<string, ChatEntry[]>>(boot.messages);
     const [unread, setUnread] = useState<Record<string, number>>(boot.unread);
     const [openChatId, setOpenChatId] = useState(boot.openChatId);
     // which chat is on screen, readable from inside the message handler
@@ -123,7 +125,8 @@ export default function MockProvider({ children }: { children: ReactNode }) {
             setChats(message.chats);
         } else if (message.type === 'chat_opened') {
             selectChat(message.chat_id);
-        } else if (message.type === 'message') {
+        } else if (message.type === 'message' || message.type === 'file') {
+            // a shared file is a line of the conversation like any other
             const chatId = message.chat_id;
             setMessages((before) => ({
                 ...before,
@@ -195,6 +198,23 @@ export default function MockProvider({ children }: { children: ReactNode }) {
         net.send({ type: 'remove_member', chat_id: chatId, user_id: userId });
     }
 
+    // the fake server needs no token: there is only ever one page talking to it
+    async function shareFile(chatId: string, file: File) {
+        try {
+            await api.shareFile('', chatId, file);
+        } catch (error) {
+            toast.error(reasonOf(error));
+        }
+    }
+
+    async function downloadFile(fileId: string, name: string) {
+        try {
+            saveBlob(await api.fetchFile('', fileId), name);
+        } catch (error) {
+            toast.error(reasonOf(error));
+        }
+    }
+
     const realtime = {
         isConnected,
         closeReason,
@@ -216,6 +236,8 @@ export default function MockProvider({ children }: { children: ReactNode }) {
         createGroup,
         addMember,
         removeMember,
+        shareFile,
+        downloadFile,
         call,
     };
 
