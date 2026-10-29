@@ -1,5 +1,6 @@
 import re
 import uuid
+import secrets
 from realtime.types import AppState, Validate
 
 
@@ -47,4 +48,29 @@ def validate_group_name(name: str) -> str | None:
         return "Group name can't be empty"
     if len(trimmed) > Validate.GROUP_NAME_MAX_LENGTH:
         return f"Group name must be at most {Validate.GROUP_NAME_MAX_LENGTH} characters"
+    return None
+
+
+# Same rules as validateFileName in Frontend/src/lib/validation.ts - keep the two in sync.
+def validate_file_name(name: str) -> str | None:
+    """Return why the file name breaks the rules, or None if it's valid.
+
+    Spaces are fine: "holiday photo.jpg" is a normal file name. The name is only
+    stored and shown, never used as a path on disk, so "../" in it does no harm.
+    """
+    trimmed = name.strip()
+    if not trimmed:
+        return "Give the file a name"
+    if len(trimmed) > Validate.FILE_NAME_MAX_LENGTH:
+        return f"File name must be at most {Validate.FILE_NAME_MAX_LENGTH} characters"
+    return None
+
+
+def user_for_token(state, token: str | None) -> uuid.UUID | None:
+    """Return the user_id for this token, or None if it's not valid."""
+    if not token:
+        return None
+    for user_id, user in state.users.items():
+        if secrets.compare_digest(user.token.encode(), token.encode()):
+            return user_id
     return None

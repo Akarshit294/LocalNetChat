@@ -8,6 +8,7 @@ class User(BaseModel):
     id: uuid.UUID
     user_name: str
     joined_at: datetime
+    token: str
 
 class Chat(BaseModel):
     # A private chat is a group of two, so both use the same shape.
@@ -16,12 +17,25 @@ class Chat(BaseModel):
     members: list[uuid.UUID]
     name: str | None = None   # groups only; a private chat is named after the other person
 
+class SharedFile(BaseModel):
+    # A file shared into a chat, kept in memory. Its size is len(data), so it isn't
+    # stored a second time where the two could disagree.
+    id: uuid.UUID
+    chat_id: uuid.UUID
+    owner_id: uuid.UUID   # who shared it; the file goes when they do
+    name: str
+    content_type: str
+    data: bytes
+    shared_at: datetime
+
 class Validate:
     USERNAME_MIN_LENGTH : int = 4
     USERNAME_MAX_LENGTH : int = 20
     MESSAGE_MAX_LENGTH : int = 1000
     GROUP_NAME_MIN_LENGTH : int = 1
     GROUP_NAME_MAX_LENGTH : int = 30
+    FILE_MAX_BYTES : int = 50 * 1024 * 1024   # 50 MB, all of it in the laptop's memory
+    FILE_NAME_MAX_LENGTH : int = 255
 
 class AppState(BaseModel):
     # frozen: nobody can edit a state object. The reducer returns a new one instead.
@@ -29,6 +43,9 @@ class AppState(BaseModel):
 
     users: dict[uuid.UUID, User] = {} #Map user_id to user object
     chats: dict[uuid.UUID, Chat] = {} #Map chat_id to chat object
+    # shared files by file_id, bytes and all. A new state shares these with the old
+    # one rather than copying them, so 50 MB here costs nothing on each change.
+    files: dict[uuid.UUID, SharedFile] = {}
     # names of people who have left, so their chats can still show who they were
     known_names: dict[uuid.UUID, str] = {}
 

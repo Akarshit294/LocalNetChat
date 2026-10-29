@@ -43,3 +43,18 @@ export function validateGroupName(raw: string): string | null {
   }
   return null;
 }
+
+export const FILE_NAME_MAX_LENGTH = 255;
+
+// Same rules as validate_file_name in Backend/realtime/validation.py - keep the
+// two in sync. Spaces are fine here: "holiday photo.jpg" is a normal file name.
+export function validateFileName(raw: string): string | null {
+  const name = raw.trim();
+  if (!name) {
+    return 'Give the file a name';
+  }
+  if (Array.from(name).length > FILE_NAME_MAX_LENGTH) {
+    return `File name must be at most ${FILE_NAME_MAX_LENGTH} characters`;
+  }
+  return null;
+}

@@ -1,7 +1,7 @@
 import uuid
 from datetime import datetime
 
-from realtime.types import AppState, Chat
+from realtime.types import AppState, Chat, SharedFile
 
 
 def active_users(state: AppState):
@@ -24,7 +24,7 @@ def system_message(text: str):
 
 def welcome_message(user):
     """Sent only to the person who just joined: this is who you are."""
-    return {"type": "welcome", "user_id": str(user.id), "user_name": user.user_name}
+    return {"type": "welcome", "user_id": str(user.id), "user_name": user.user_name, "token": user.token}
 
 
 def error_message(reason: str):
@@ -82,6 +82,20 @@ def chat_message(chat_id: uuid.UUID, from_id: uuid.UUID, text: str, sent_at: dat
         "from_id": str(from_id),
         "text": text,
         "sent_at": sent_at.isoformat(),
+    }
+
+
+def file_message(file: SharedFile):
+    """A file was shared into a chat. Only what to show: the bytes are fetched over HTTP."""
+    return {
+        "type": "file",
+        "chat_id": str(file.chat_id),
+        "file_id": str(file.id),
+        "from_id": str(file.owner_id),
+        "name": file.name,
+        "content_type": file.content_type,
+        "size": len(file.data),
+        "sent_at": file.shared_at.isoformat(),
     }
 
 def call_message(user_id: uuid.UUID, note: dict):

@@ -22,6 +22,7 @@ from realtime.validation import is_name_taken
 import uuid
 import asyncio
 from datetime import datetime
+import secrets
 
 # every message type a client may send, and the model that checks its shape
 INCOMING_MESSAGES = {
@@ -75,7 +76,8 @@ class WebSocketManager:
         await websocket.accept()
 
         user_id = uuid.uuid4()
-        user = User(id=user_id, user_name=username, joined_at=datetime.now())
+        token = secrets.token_hex(32)
+        user = User(id=user_id, user_name=username, joined_at=datetime.now(), token=token)
 
         self.sockets[user_id] = websocket
 

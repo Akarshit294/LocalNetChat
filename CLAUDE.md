@@ -70,13 +70,14 @@ Backend/
 ├── routes/                 the shell: HTTP and socket entry points only
 │   ├── health.py           GET /health
 │   ├── users.py            GET /users (debug), GET /users/check?username=
+│   ├── files.py            POST /files: share a file into a chat. The bytes come over HTTP
 │   └── websocket.py        /ws: accept, receive loop, cleanup in finally
 └── realtime/
-    ├── types.py            User, Chat, AppState, Event, Command, and the incoming message models
+    ├── types.py            User, Chat, SharedFile, AppState, Event, Command, and the incoming message models
     ├── reducer.py          reduce(): pure. Every rule lives here.
     ├── manager.py          the one WebSocketManager: state, sockets, lock, dispatch, run
     ├── messages.py         builders for everything sent to a page. Pure.
-    └── validation.py       username and group-name rules, and "is this name taken". Pure.
+    └── validation.py       name rules, "is this name taken", and whose token this is. Pure.
 ```
 
 **The rules that keep it honest**
@@ -143,12 +144,13 @@ Every message, both directions, is JSON with a `type`.
 
 | server → page | fields | who gets it |
 |---|---|---|
-| `welcome` | `user_id`, `user_name` | only the person who just joined |
+| `welcome` | `user_id`, `user_name`, `token` | only the person who just joined |
 | `users` | `users[]` | everyone |
 | `system` | `text` | everyone |
 | `chats` | `chats[]` with members and their `online` flag | only that chat's members |
 | `chat_opened` | `chat_id` | only the person who asked |
 | `message` | `chat_id`, `from_id`, `text`, `sent_at` | that chat's online members |
+| `file` | `chat_id`, `file_id`, `from_id`, `name`, `content_type`, `size`, `sent_at` | that chat's online members, the sharer too |
 | `renamed` | `new_name` | only the renamer |
 | `error` | `reason` | only the sender of the bad request |
 | `call_offer` | `from_id`, `sdp` | only the person being called |
@@ -168,6 +170,27 @@ takes the `user_id` the route knows and ignores any id inside the payload. So
 **Membership changes carry one person, not a list.** A single `update_group` holding
 the whole membership would let a stale page silently drop anyone added since it last
 heard. The lock stops corruption, not clobbering.
+
+**Files go over HTTP, and only a note about them over the socket.** The socket is one
+TCP connection carrying every chat message, so a 40 MB file on it would hold up
+everything behind it. An HTTP request gets its own connection.
+
+| HTTP (the page calls `/api/...`) | carries | answers |
+|---|---|---|
+| `POST /files?chat_id=&name=` | `Authorization: Bearer <token>`; the body is the file's raw bytes; `Content-Type` is its type | `201 {file_id}` · `401` no or unknown token · `403` not your chat, or nobody else in it online · `400` bad name · `413` over 50 MB |
+
+**On HTTP, identity comes from the token**, because a request has no socket the
+server knows. Each join gets a random token, sent only in `welcome`, and gone when
+that person leaves. A `user_id` in the request would do instead only if ids were
+secret, and they aren't: `users` sends everyone's to everyone.
+
+A file is kept in memory, in `AppState.files`, until the person who shared it
+leaves. The route asks `file_refusal()` before reading the body, so a stranger is
+turned away without 50 MB being read, then counts while reading because
+`Content-Length` can be missing or lie. The reducer asks `file_refusal()` again
+under the lock, and the route answers by whether the file landed, the way
+`connect()` does after a join. A new state shares the bytes with the old one, so
+holding them in state costs nothing on each change.
 
 **The four `call_*` notes are post.** The server reads `user_id`, sends the same
 note to that person with `from_id` in its place (taken from the socket, like every

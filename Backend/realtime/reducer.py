@@ -3,6 +3,7 @@ from realtime.messages import (
     chat_opened_message,
     chats_message,
     error_message,
+    file_message,
     system_message,
     users_message,
     welcome_message,
@@ -36,6 +37,21 @@ def find_private_chat(state: AppState, first_id, second_id):
     for chat in state.chats.values():
         if chat.type == "private" and set(chat.members) == pair:
             return chat
+    return None
+
+
+def file_refusal(state: AppState, owner_id, chat_id):
+    """Why this person can't share a file into this chat, or None if they can.
+
+    The upload route asks first, so it can turn a request away before reading
+    50 MB of it. The reducer asks again under the lock, where the answer counts.
+    """
+    chat = state.chats.get(chat_id)
+    if not chat or owner_id not in chat.members:
+        return "That chat isn't yours"
+    # anyone who comes back gets a new id, so nobody else could ever fetch it
+    if not any(member_id != owner_id and member_id in state.users for member_id in chat.members):
+        return "Nobody in this chat is online"
     return None
 
 
@@ -109,10 +125,18 @@ def reduce(state: AppState, event: Event):
                 for uid, name in state.known_names.items()
                 if uid in users or uid in still_named
             }
+            # what they shared goes with them. Once no state holds a file, its
+            # bytes are freed.
+            files = {
+                file_id: file
+                for file_id, file in state.files.items()
+                if file.owner_id != user_id
+            }
             new_state = state.model_copy(update={
                 "users": users,
                 "chats": chats,
                 "known_names": known_names,
+                "files": files,
             })
             who_left = state.users[user_id].user_name
             return new_state, [
@@ -445,6 +469,30 @@ def reduce(state: AppState, event: Event):
                     user_id=to_id,
                     message=call_message(user_id, note)
                 )
+            ]
+
+    elif event_type == "file_shared":
+        # the route built the file with owner_id from the token, so who shared it
+        # is inside the file and not repeated beside it
+        file = event.payload.get("file")
+        if file and file.owner_id in state.users:
+            # no error message here: the upload was an HTTP request, and its
+            # answer says what went wrong
+            if file_refusal(state, file.owner_id, file.chat_id):
+                return state, []
+
+            chat = state.chats[file.chat_id]
+            new_state = state.model_copy(update={"files": {**state.files, file.id: file}})
+            # everyone connected hears of it, the sharer too, so their page shows
+            # the file the server actually holds
+            return new_state, [
+                Command(
+                    type="send",
+                    user_id=member_id,
+                    message=file_message(file)
+                )
+                for member_id in chat.members
+                if member_id in state.users
             ]
 
     # nothing to change: hand back the state we were given
