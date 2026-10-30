@@ -71,6 +71,7 @@ Backend/
 │   ├── health.py           GET /health
 │   ├── users.py            GET /users (debug), GET /users/check?username=
 │   ├── files.py            POST /files, GET /files/{id}: a file's bytes, in and out, over HTTP
+│   ├── sessions.py         POST /sessions: "log in" with a name, get a session cookie back
 │   └── websocket.py        /ws: accept, receive loop, cleanup in finally
 └── realtime/
     ├── types.py            User, Chat, SharedFile, AppState, Event, Command, and the incoming message models
@@ -179,12 +180,33 @@ everything behind it. An HTTP request gets its own connection.
 | HTTP (the page calls `/api/...`) | carries | answers |
 |---|---|---|
 | `POST /files?chat_id=&name=` | `Authorization: Bearer <token>`; the body is the file's raw bytes; `Content-Type` is its type | `201 {file_id}` · `401` no or unknown token · `403` not your chat, or nobody else in it online · `400` bad name · `413` over 50 MB |
+| `POST /sessions` | JSON `{"user_name": "…"}` | `201` + `Set-Cookie: session=<id>; HttpOnly; Secure; SameSite=Strict; Path=/` · `400` a broken rule, with the reason · `409` someone online has the name |
 | `GET /files/{file_id}` | `Authorization: Bearer <token>`; optional `Range: bytes=…` | `200` the raw bytes · `206` one piece, with `Content-Range` · `416` a range starting past the end, with `Content-Range: bytes */<size>` · `401` · `404` no such file, **or not yours**: one answer, so a stranger can't learn which files exist |
 
 **On HTTP, identity comes from the token**, because a request has no socket the
 server knows. Each join gets a random token, sent only in `welcome`, and gone when
 that person leaves. A `user_id` in the request would do instead only if ids were
 secret, and they aren't: `users` sends everyone's to everyone.
+
+**Moving to cookies (in progress).** `<video>`, `<img>` and a download link fetch by
+themselves and can't add an `Authorization` header, so identity is moving into an
+`HttpOnly` cookie. `POST /sessions` is the first step: it checks the name, makes a
+random session id (`secrets`, made in the route), and the reducer stores it in
+`AppState.sessions` (id → name). A cookie only goes out for a session that was
+really stored. A session is a login that hasn't connected yet, not a user. The
+name is **not reserved**: anyone can call this route without ever opening the
+socket, so reserving would let one loop lock every name away. The socket's join
+stays the real check, first to connect wins. Not yet done: `/ws` reading the cookie
+and turning the session into a user, the HTTP routes reading it, and `Origin`
+checks on the socket and on POSTs (a cookie is sent automatically, so CSRF and
+cross-site socket hijacking become possible). Until then the socket still joins
+with the name in its URL, and HTTP still uses the Bearer token.
+
+Why not access + refresh tokens, as Clerk does: those solve problems this app
+doesn't have. Clerk's API checks a self-signed JWT without asking the auth server,
+so the JWT can't be taken back and lives 60 seconds; it's readable by scripts, so
+it's short to limit XSS. Here one process holds every session in memory, a lookup
+is instant, a session dies the moment you leave, and the cookie is `HttpOnly`.
 
 A file is kept in memory, in `AppState.files`, until the person who shared it
 leaves. The route asks `file_upload_refusal()` before reading the body, so a stranger is

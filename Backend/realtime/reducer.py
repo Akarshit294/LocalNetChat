@@ -506,5 +506,18 @@ def reduce(state: AppState, event: Event):
                 if member_id in state.users
             ]
 
+    elif event_type == "session_requested":
+        session_id = event.payload.get("session_id")
+        user_name = event.payload.get("user_name")
+        if session_id and user_name:
+            # validate_username returns the reason a name is bad, None when it's fine.
+            # The name isn't reserved: the join itself is the real check, so a
+            # session nobody connects with can't lock a name away.
+            if validate_username(user_name) or is_name_taken(state, user_name):
+                return state, []
+            
+            new_state = state.model_copy(update={"sessions": {**state.sessions, session_id: user_name}})
+            return new_state, []
+
     # nothing to change: hand back the state we were given
     return state, []

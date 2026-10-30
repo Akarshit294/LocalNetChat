@@ -48,6 +48,7 @@ class AppState(BaseModel):
     files: dict[uuid.UUID, SharedFile] = {}
     # names of people who have left, so their chats can still show who they were
     known_names: dict[uuid.UUID, str] = {}
+    sessions: dict[str, str] = {}
 
 class Event(BaseModel):
     type: str
@@ -124,3 +125,6 @@ class EndCallMessage(BaseModel):
     type: Literal["call_end"]
     user_id: uuid.UUID
     reason: str | None = None
+
+class SessionRequest(BaseModel):
+    user_name: str

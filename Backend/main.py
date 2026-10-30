@@ -6,6 +6,7 @@ from routes.health import router as health_router
 from routes.users import router as users_router
 from routes.websocket import router as websocket_router
 from routes.files import router as files_router
+from routes.sessions import router as sessions_router
 
 app = FastAPI()
 
@@ -19,3 +20,4 @@ app.include_router(health_router)
 app.include_router(users_router)
 app.include_router(websocket_router)
 app.include_router(files_router)
+app.include_router(sessions_router)
