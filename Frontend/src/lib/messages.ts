@@ -21,9 +21,6 @@ export type WelcomeMessage = {
   type: 'welcome';
   user_id: string;
   user_name: string;
-  // our secret for HTTP requests, which have no socket to say who sent them.
-  // Sent as `Authorization: Bearer <token>`, and dead once we disconnect.
-  token: string;
 };
 
 export type RenamedMessage = {

@@ -1,15 +1,24 @@
 import json
 
-from fastapi import APIRouter, WebSocket, WebSocketDisconnect
+from fastapi import APIRouter, WebSocket, WebSocketDisconnect, Cookie
 from realtime.manager import ws_manager
+from routes.guards import same_origin
 
 
 router = APIRouter()
 
 @router.websocket("/ws")
-async def websocket_endpoint(websocket: WebSocket, username: str = "Anonymous"):
-    username = username.strip()
-    user_id = await ws_manager.connect(websocket, username)
+async def websocket_endpoint(websocket: WebSocket, session: str | None = Cookie(default=None)):
+    # A page on another site can open a socket here too, and the browser would
+    # attach our cookie to it: CORS doesn't cover WebSockets. Only our own page
+    # gets in. Refused before accepting, so the handshake itself fails (403).
+    if not same_origin(websocket.headers.get("origin"), websocket.headers.get("host")):
+        await websocket.close(code=1008, reason="Cross-origin WebSocket not allowed")
+        return
+
+    # whether the session is real is a rule, so the reducer decides, and a page
+    # without one is told why (4003 "Join first") rather than just cut off
+    user_id = await ws_manager.connect(websocket, session or "")
     if not user_id:
         return
         

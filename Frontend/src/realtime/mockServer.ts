@@ -236,8 +236,7 @@ class MockNet {
     this.meId = this.freeId(newId('me'));
     this.people.set(this.meId, { id: this.meId, user_name: wanted, online: true, bot: false });
 
-    // a token like the real welcome's, though nothing here ever checks it
-    this.emit({ type: 'welcome', user_id: this.meId, user_name: wanted, token: 'fake' });
+    this.emit({ type: 'welcome', user_id: this.meId, user_name: wanted });
     this.sendUsers();
     this.sendChats();
     this.sendSystem(`${wanted} has joined the chat`);

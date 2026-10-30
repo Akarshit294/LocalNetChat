@@ -44,6 +44,19 @@ export function validateGroupName(raw: string): string | null {
   return null;
 }
 
+// Same rules as safe_media_type in Backend/realtime/validation.py - keep the two
+// in sync. What the server will send as itself rather than as a download, and
+// so what this page shows in place: images, video and audio, never SVG (a
+// document that can carry scripts). The label is whatever the uploader wrote,
+// so it's cleaned first. Null means "offer it as a download only".
+export function safeMediaType(contentType: string): string | null {
+  const kind = contentType.split(';')[0].trim().toLowerCase();
+  if (kind === 'image/svg+xml') {
+    return null;
+  }
+  return /^(image|video|audio)\//.test(kind) ? kind : null;
+}
+
 export const FILE_NAME_MAX_LENGTH = 255;
 // Same as Validate.FILE_MAX_BYTES. Checked here so a file that's too big is
 // turned away before it's uploaded, not after the server has read 50 MB of it.

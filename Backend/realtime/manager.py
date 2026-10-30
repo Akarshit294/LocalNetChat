@@ -22,7 +22,7 @@ from realtime.validation import is_name_taken
 import uuid
 import asyncio
 from datetime import datetime
-import secrets
+
 
 # every message type a client may send, and the model that checks its shape
 INCOMING_MESSAGES = {
@@ -72,16 +72,21 @@ class WebSocketManager:
                     print(f"Failed to send message to {command.user_id}, dropping the socket")
                     self.sockets.pop(command.user_id, None)
 
-    async def connect(self, websocket: WebSocket, username: str):
+    async def connect(self, websocket: WebSocket, session_id: str):
         await websocket.accept()
 
         user_id = uuid.uuid4()
-        token = secrets.token_hex(32)
-        user = User(id=user_id, user_name=username, joined_at=datetime.now(), token=token)
+        # The name was chosen at login. Reading the state is fine; only dispatch
+        # writes it. No session gives an empty name, and the reducer refuses that
+        # join with 4003 before any name rule is asked.
+        username = self.state.sessions.get(session_id, "")
+        # the session id becomes this person's token: what the cookie carries on
+        # every HTTP request from here on
+        user = User(id=user_id, user_name=username, joined_at=datetime.now(), token=session_id)
 
         self.sockets[user_id] = websocket
 
-        await self.dispatch(Event(type="join_requested", payload={"user": user}))
+        await self.dispatch(Event(type="join_requested", payload={"user": user, "session_id": session_id}))
 
         if user_id in self.state.users:
             return user_id

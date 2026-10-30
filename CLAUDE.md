@@ -4,7 +4,7 @@
 
 A chat app for one Wi-Fi network. A FastAPI server on a laptop, a React page that
 anyone on the same network opens in a browser, and one WebSocket between them. No
-cloud, no database, no login, and nothing is remembered after a restart.
+cloud, no database, no accounts or passwords, and nothing is remembered after a restart.
 
 It is also a **learning project**. The owner is teaching themselves networking and is
 building this to understand WebSockets by hand; their notes live in
@@ -78,7 +78,7 @@ Backend/
     ├── reducer.py          reduce(): pure. Every rule lives here.
     ├── manager.py          the one WebSocketManager: state, sockets, lock, dispatch, run
     ├── messages.py         builders for everything sent to a page. Pure.
-    └── validation.py       name rules, "is this name taken", and whose token this is. Pure.
+    └── validation.py       name rules, "is this name taken", whose session this is, what may be shown. Pure.
 ```
 
 **The rules that keep it honest**
@@ -111,7 +111,7 @@ Frontend/src/
 ├── pages/                  JoinPage "/", PeoplePage "/people", ChatPage "/chat", YouPage "/you"
 ├── components/             NameInput, Notices, CallPanel, Health
 ├── hooks/                  useDebounce, useNameCheck
-└── lib/                    api.ts (fetch wrapper, file upload and download), messages.ts (wire
+└── lib/                    api.ts (fetch wrapper, log in, upload with progress, file addresses), messages.ts (wire
                             types), validation.ts, files.ts (sizes, and saving a downloaded file)
 ```
 
@@ -146,7 +146,7 @@ Every message, both directions, is JSON with a `type`.
 
 | server → page | fields | who gets it |
 |---|---|---|
-| `welcome` | `user_id`, `user_name`, `token` | only the person who just joined |
+| `welcome` | `user_id`, `user_name` | only the person who just joined |
 | `users` | `users[]` | everyone |
 | `system` | `text` | everyone |
 | `chats` | `chats[]` with members and their `online` flag | only that chat's members |
@@ -179,28 +179,45 @@ everything behind it. An HTTP request gets its own connection.
 
 | HTTP (the page calls `/api/...`) | carries | answers |
 |---|---|---|
-| `POST /files?chat_id=&name=` | `Authorization: Bearer <token>`; the body is the file's raw bytes; `Content-Type` is its type | `201 {file_id}` · `401` no or unknown token · `403` not your chat, or nobody else in it online · `400` bad name · `413` over 50 MB |
-| `POST /sessions` | JSON `{"user_name": "…"}` | `201` + `Set-Cookie: session=<id>; HttpOnly; Secure; SameSite=Strict; Path=/` · `400` a broken rule, with the reason · `409` someone online has the name |
-| `GET /files/{file_id}` | `Authorization: Bearer <token>`; optional `Range: bytes=…` | `200` the raw bytes · `206` one piece, with `Content-Range` · `416` a range starting past the end, with `Content-Range: bytes */<size>` · `401` · `404` no such file, **or not yours**: one answer, so a stranger can't learn which files exist |
+| `POST /files?chat_id=&name=` | the session cookie; `Origin`; the body is the file's raw bytes; `Content-Type` is its type | `201 {file_id}` · `401` "Join first" · `403` another site's `Origin`, not your chat, or nobody else in it online · `400` bad name · `413` over 50 MB |
+| `POST /sessions` | JSON `{"user_name": "…"}`; `Origin` | `201` + `Set-Cookie: session=<id>; HttpOnly; Secure; SameSite=Strict; Path=/` · `400` a broken rule, with the reason · `409` someone online has the name · `403` another site's `Origin` |
+| `GET /files/{file_id}` | the session cookie; optional `Range: bytes=…` | `200` the raw bytes · `206` one piece, with `Content-Range` · `416` a range starting past the end, with `Content-Range: bytes */<size>` · `401` · `404` no such file, **or not yours**: one answer, so a stranger can't learn which files exist |
 
-**On HTTP, identity comes from the token**, because a request has no socket the
-server knows. Each join gets a random token, sent only in `welcome`, and gone when
-that person leaves. A `user_id` in the request would do instead only if ids were
-secret, and they aren't: `users` sends everyone's to everyone.
+**Who you are travels in an `HttpOnly` session cookie**, for the socket and for
+HTTP alike. A `<video>`, an `<img>` and a download link fetch by themselves and
+can't add an `Authorization` header, but the browser attaches a cookie to them on
+its own, and page scripts can't read an `HttpOnly` one, so XSS can't steal it.
 
-**Moving to cookies (in progress).** `<video>`, `<img>` and a download link fetch by
-themselves and can't add an `Authorization` header, so identity is moving into an
-`HttpOnly` cookie. `POST /sessions` is the first step: it checks the name, makes a
-random session id (`secrets`, made in the route), and the reducer stores it in
-`AppState.sessions` (id → name). A cookie only goes out for a session that was
-really stored. A session is a login that hasn't connected yet, not a user. The
-name is **not reserved**: anyone can call this route without ever opening the
-socket, so reserving would let one loop lock every name away. The socket's join
-stays the real check, first to connect wins. Not yet done: `/ws` reading the cookie
-and turning the session into a user, the HTTP routes reading it, and `Origin`
-checks on the socket and on POSTs (a cookie is sent automatically, so CSRF and
-cross-site socket hijacking become possible). Until then the socket still joins
-with the name in its URL, and HTTP still uses the Bearer token.
+1. **Log in:** `POST /sessions` checks the name and makes a random session id
+   (`secrets`, in the route). The reducer stores it in `AppState.sessions` (id →
+   name) and the answer sets `session=<id>`; a cookie only goes out for a session
+   that was really stored. The name is **not reserved**: anyone can call this
+   without ever opening the socket, so reserving would let one loop lock every name
+   away. The socket's join is the real check, first to connect wins.
+2. **Join:** `/ws` (no name in the URL any more) carries the cookie. The manager
+   reads the name from the session, and the reducer refuses a missing or unknown
+   one with **4003 "Join first"**. **One session, one try:** any join uses it up,
+   working or not. If it works, the id becomes the user's `token` and goes when they
+   leave, so `sessions` only ever holds logins waiting to connect. Keeping it there
+   as well stored the same fact twice: a rename then a leave cleaned up by the new
+   name, missed the old entry, and the old cookie got straight back in.
+3. **HTTP:** `who_is_asking()` looks the cookie up as a user's token, `401 "Join
+   first"` if it's nobody's. A `user_id` in the request wouldn't do: `users` sends
+   everyone's to everyone.
+
+**A cookie is sent automatically, even when another site's page makes the
+request**, so: anything that **changes** something checks `Origin` (`same_origin()`
+in `routes/guards.py`: the browser writes `Origin`, and ours is `https://` + `Host`,
+which Vite passes through unchanged). That's `POST /sessions`, `POST /files` (CSRF)
+and the `/ws` handshake (cross-site socket hijacking: CORS doesn't cover sockets),
+refused before accepting. `GET /files` doesn't: it changes nothing, and another site
+can't read what comes back. `SameSite=Strict` isn't enough alone: site ignores the
+port, so another app on the laptop at `:8080` counts as the same site.
+
+**One browser is one person now.** Tabs share a browser's cookies, so a second tab
+logging in replaces the first tab's session cookie, and the first tab's uploads go
+out as the second person. Two people on one machine need two browser profiles (a
+normal window and a private one), or two devices.
 
 Why not access + refresh tokens, as Clerk does: those solve problems this app
 doesn't have. Clerk's API checks a self-signed JWT without asking the auth server,
@@ -219,7 +236,7 @@ holding them in state costs nothing on each change.
 A download asks `can_download()`, which takes the chat from the **file**, never from
 the request. A chat id the page sends would let someone name a chat of their own
 and pass. The rules in `reducer.py` return reasons or yes/no, never status codes;
-the route picks the code. `who_is_asking()` is HTTP's half of identity (header,
+the route picks the code. `who_is_asking()` is HTTP's half of identity (cookie,
 401) and lives in the route file; `user_for_token()` is the pure half.
 
 **Only media is served as itself.** A file's label is whatever the uploader wrote,
@@ -284,9 +301,10 @@ it. Fine for a notice; a correlation id is the fix if that changes.
 - **Don't call setState directly inside a `useEffect`.** The lint rule
   `react-hooks/set-state-in-effect` rejects it. Socket messages are handled in the
   hook's `onMessage` option instead.
-- **The socket URL must not change while connected.** It's built from `connectName`,
-  fixed when you press Connect. Building it from the current name made the hook
-  reconnect on every keystroke and again on every rename.
+- **The socket URL never changes**: it's `WS_URL`, with nothing about you in it. Who
+  you are is in the cookie, set by `POST /sessions` before `shouldConnect` turns on.
+  (When the name was in the URL, building it from the current name made the hook
+  reconnect on every keystroke and again on every rename.)
 - **The two validation files mirror each other**: `Backend/realtime/validation.py` and
   `Frontend/src/lib/validation.ts`. Change one, change the other. The backend is the
   real check; the frontend only gives instant feedback. Names are trimmed, then any
@@ -303,10 +321,17 @@ it. Fine for a notice; a correlation id is the fix if that changes.
   together), so a slow answer about an earlier name can't land on the current one.
   A taken name is shown on the join page as well as a broken rule (`nameNote`'s
   `taken`): the box shakes for either, so it says why for either.
-- **The token lives in a ref in the provider**, never in state or the context: nothing
-  is drawn from it, and a page has no reason to hold it. The provider's `shareFile`
-  and `downloadFile` attach it. A downloaded file is fetched into the tab as a Blob,
-  then saved through a temporary `blob:` link (`saveBlob` in `lib/files.ts`).
+- **The page never holds a credential.** The session cookie is `HttpOnly`; requests
+  carry it by themselves. A preview is an `<img loading="lazy">`, `<video>` or
+  `<audio preload="metadata">` pointed at `fileUrl()`, so the browser fetches it
+  with the cookie, in `Range` pieces for media, and the page never holds the bytes:
+  a 4 GB video only ever sits in the browser's buffer near the play position. A
+  download is a clicked `<a download>` (`startDownload`), which the browser's
+  download manager writes straight to disk. Only the `?fake` server, whose files
+  never leave the tab, uses `blob:` addresses and `saveBlob`. What's previewed is
+  `safeMediaType()`, the mirror of the server's `safe_media_type()`.
+- **Upload progress needs `XMLHttpRequest`**: `fetch` can't report how much of an
+  upload has gone. `api.shareFile` uses it; the FILE button shows `SENDING 42%`.
 - **`request()` labels only a string body as JSON.** A `File` body is sent with the
   browser's own label for it (`image/png`), which is what the server stores.
 - **Vite can miss the second of two quick writes to one file.** It re-reads on the
@@ -390,6 +415,16 @@ turn to GONE, no DOWNLOAD), and someone outside the chat asking for it (404). In
 headless Chrome, hold the `Browser.setDownloadBehavior` connection open for the
 whole run: the setting ends with that connection, and downloads then land in the
 real `~/Downloads`. A file is picked with `DOM.setFileInputFiles` on the hidden input.
+
+Since the session cookie, **each person in a browser test needs their own browser
+profile** (`Target.createBrowserContext`, then `Target.createTarget` in it): tabs in
+one profile share one cookie, so the second login would take over the first tab.
+Downloads are set per profile (`browserContextId`). Starlette's `TestClient` opens
+sockets as `ws://`, never `wss://`, so its cookie jar holds back the `Secure`
+session cookie: pass `cookie: session=…` on the socket by hand. For media, make
+real files with `ffmpeg`: a test pattern compresses too well to need more than one
+request, so add `noise` for a video big enough that skipping shows a `Range` from
+the middle, and capture `Network.requestWillBeSentExtraInfo` to see the headers.
 
 The reducer is pure, so an awkward state is often quicker to check by calling
 `reduce()` directly with a hand-built `AppState` than by driving sockets to it.

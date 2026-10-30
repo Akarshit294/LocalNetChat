@@ -90,6 +90,8 @@ export default function MockProvider({ children }: { children: ReactNode }) {
     // which chat is on screen, readable from inside the message handler
     const openChatIdRef = useRef(boot.openChatId);
     const attached = useRef(false);
+    // file id -> the blob: address made for it, so each file gets one
+    const fileUrls = useRef(new Map<string, string>());
     const { call, onMessage: onCallMessage, drop: dropCall } = useCall((message) => net.send(message));
 
     // from here on the fake server talks to the page directly. Anything it said
@@ -154,9 +156,15 @@ export default function MockProvider({ children }: { children: ReactNode }) {
         setUnread({});
         selectChat('');
         dropCall();
+        // the fake server let go of our files as we left, so the addresses go too
+        for (const url of fileUrls.current.values()) {
+            URL.revokeObjectURL(url);
+        }
+        fileUrls.current.clear();
     }
 
-    function connect(name: string) {
+    // nothing to log in to: the fake server checks the name as it's joined
+    async function connect(name: string) {
         setCloseReason('');
         net.connect(name, { onMessage, onClose });
     }
@@ -198,20 +206,32 @@ export default function MockProvider({ children }: { children: ReactNode }) {
         net.send({ type: 'remove_member', chat_id: chatId, user_id: userId });
     }
 
-    // the fake server needs no token: there is only ever one page talking to it
-    async function shareFile(chatId: string, file: File) {
+    async function shareFile(chatId: string, file: File, onProgress?: (fraction: number) => void) {
         try {
-            await api.shareFile('', chatId, file);
+            await api.shareFile(chatId, file, onProgress);
         } catch (error) {
             toast.error(reasonOf(error));
         }
     }
 
-    async function downloadFile(fileId: string, name: string) {
-        try {
-            saveBlob(await api.fetchFile('', fileId), name);
-        } catch (error) {
-            toast.error(reasonOf(error));
+    // The fake server's files never leave this tab, so a file's address is a
+    // blob: one for the Blob it holds, made once and kept until we leave.
+    function fileUrl(fileId: string) {
+        let url = fileUrls.current.get(fileId);
+        const blob = url ? null : net.fileBlob(fileId);
+        if (blob) {
+            url = URL.createObjectURL(blob);
+            fileUrls.current.set(fileId, url);
+        }
+        return url ?? '';
+    }
+
+    function downloadFile(fileId: string, name: string) {
+        const blob = net.fileBlob(fileId);
+        if (blob) {
+            saveBlob(blob, name);
+        } else {
+            toast.error('No such file');
         }
     }
 
@@ -237,6 +257,7 @@ export default function MockProvider({ children }: { children: ReactNode }) {
         addMember,
         removeMember,
         shareFile,
+        fileUrl,
         downloadFile,
         call,
     };

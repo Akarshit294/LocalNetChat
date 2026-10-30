@@ -125,45 +125,68 @@ export const api = {
     return { available: net.isNameFree(username) };
   },
 
+  // POST /sessions: "log in" with a name. The answer sets an HttpOnly session
+  // cookie, which this page can't read and never needs to: the browser sends it
+  // by itself, with the socket and every request after. The fake server checks
+  // the name when it's joined instead, so there's nothing to do here for it.
+  createSession: async (name: string): Promise<void> => {
+    if (!FAKE) {
+      await request('/sessions', { method: 'POST', body: JSON.stringify({ user_name: name }) });
+    }
+  },
+
   // POST /files. The body is the file itself, not a form, so the server gets
   // exactly its bytes. It answers with the new file's id; the "file" note that
   // puts it in the conversation comes over the socket, to us as to everyone.
-  shareFile: async (token: string, chatId: string, file: File): Promise<{ file_id: string }> => {
-    if (!FAKE) {
+  //
+  // XMLHttpRequest rather than fetch, because only it reports how much of an
+  // upload has gone: `onProgress` gets 0 to 1 as it goes.
+  shareFile: (chatId: string, file: File, onProgress?: (fraction: number) => void): Promise<{ file_id: string }> => {
+    if (FAKE) {
+      return fakeShare(chatId, file, onProgress);
+    }
+    return new Promise((resolve, reject) => {
+      const xhr = new XMLHttpRequest();
       const query = new URLSearchParams({ chat_id: chatId, name: file.name });
-      return request<{ file_id: string }>(`/files?${query}`, {
-        method: 'POST',
-        body: file,
-        // an HTTP request has no socket to say who sent it, so the token does
-        headers: { Authorization: `Bearer ${token}` },
-        timeoutMs: FILE_TIMEOUT_MS,
-      });
-    }
-    await pause(400);
-    const answer = net.shareFile(chatId, file);
-    if ('refused' in answer) {
-      throw new ApiError(answer.status, JSON.stringify({ detail: answer.refused }));
-    }
-    return answer;
+      xhr.open('POST', `${API_BASE}/files?${query}`);
+      xhr.timeout = FILE_TIMEOUT_MS;
+      xhr.upload.onprogress = (event) => {
+        if (event.lengthComputable) {
+          onProgress?.(event.loaded / event.total);
+        }
+      };
+      xhr.onload = () => {
+        if (xhr.status >= 200 && xhr.status < 300) {
+          resolve(JSON.parse(xhr.responseText) as { file_id: string });
+        } else {
+          reject(new ApiError(xhr.status, xhr.responseText));
+        }
+      };
+      // the same errors fetch would give, so reasonOf reads them the same way
+      xhr.onerror = () => reject(new TypeError('network error'));
+      xhr.ontimeout = () => reject(new DOMException('timed out', 'TimeoutError'));
+      // the cookie goes along by itself; the browser labels the body with the file's type
+      xhr.send(file);
+    });
   },
 
-  // GET /files/{id}: the raw bytes, held in this tab's memory as a Blob
-  fetchFile: async (token: string, fileId: string): Promise<Blob> => {
-    if (!FAKE) {
-      const res = await send(`/files/${encodeURIComponent(fileId)}`, {
-        headers: { Authorization: `Bearer ${token}` },
-        timeoutMs: FILE_TIMEOUT_MS,
-      });
-      return res.blob();
-    }
-    await pause(300);
-    const blob = net.fileBlob(fileId);
-    if (!blob) {
-      throw new ApiError(404, JSON.stringify({ detail: 'No such file' }));
-    }
-    return blob;
-  },
+  // Where a file can be fetched from: a <video>, an <img> or a download link
+  // asks for it there itself, with the cookie, and in pieces if it wants.
+  fileUrl: (fileId: string): string => `${API_BASE}/files/${encodeURIComponent(fileId)}`,
 };
+
+// The fake server's upload: the same refusals, and a little progress to watch.
+async function fakeShare(chatId: string, file: File, onProgress?: (fraction: number) => void) {
+  for (const fraction of [0.25, 0.5, 0.75, 1]) {
+    await pause(100);
+    onProgress?.(fraction);
+  }
+  const answer = net.shareFile(chatId, file);
+  if ('refused' in answer) {
+    throw new ApiError(answer.status, JSON.stringify({ detail: answer.refused }));
+  }
+  return answer;
+}
 
 // What to tell a person about a request that failed, in words.
 export function reasonOf(error: unknown): string {

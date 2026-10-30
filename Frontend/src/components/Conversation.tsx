@@ -1,9 +1,9 @@
-import { useEffect, useRef, useState, type ChangeEvent } from 'react';
+import { useEffect, useRef, useState, type ChangeEvent, type CSSProperties } from 'react';
 import { toast } from 'react-hot-toast/headless';
 import { canWrite, clockOf } from '../lib/chats.ts';
 import { sizeOf } from '../lib/files.ts';
 import type { ChatEntry, ChatFileMessage, ChatSummary } from '../lib/messages.ts';
-import { FILE_MAX_BYTES, validateFileName } from '../lib/validation.ts';
+import { FILE_MAX_BYTES, safeMediaType, validateFileName } from '../lib/validation.ts';
 import { Avatar } from '../ui/Avatar.tsx';
 import { revealStyle } from '../ui/motion.ts';
 import { Bar, Button, Field, Label, Stage } from '../ui/primitives.tsx';
@@ -22,13 +22,16 @@ type Props = {
   messages: ChatEntry[];
   onlineIds: Set<string>;   // who is connected now: a shared file goes when its sharer does
   onSend: (text: string) => void;
-  onShare: (file: File) => Promise<void>;
-  onDownload: (fileId: string, name: string) => Promise<void>;
+  // finishes when the upload does, reporting 0 to 1 on the way
+  onShare: (file: File, onProgress: (fraction: number) => void) => Promise<void>;
+  fileUrl: (fileId: string) => string;   // where a preview fetches the file from
+  onDownload: (fileId: string, name: string) => void;
 };
 
-export default function Conversation({ chat, myId, messages, onlineIds, onSend, onShare, onDownload }: Props) {
+export default function Conversation({ chat, myId, messages, onlineIds, onSend, onShare, fileUrl, onDownload }: Props) {
   const [draft, setDraft] = useState('');
-  const [sharing, setSharing] = useState(false);
+  // how much of the file being shared has gone up, 0 to 1. Null when none is.
+  const [sharing, setSharing] = useState<number | null>(null);
   const boxRef = useRef<HTMLDivElement>(null);
   const pickerRef = useRef<HTMLInputElement>(null);
 
@@ -71,11 +74,11 @@ export default function Conversation({ chat, myId, messages, onlineIds, onSend, 
       toast.error(problem);
       return;
     }
-    setSharing(true);
+    setSharing(0);
     try {
-      await onShare(file);
+      await onShare(file, setSharing);
     } finally {
-      setSharing(false);
+      setSharing(null);
     }
   }
 
@@ -148,6 +151,7 @@ export default function Conversation({ chat, myId, messages, onlineIds, onSend, 
                     <FileLine
                       file={message}
                       gone={!onlineIds.has(message.from_id)}
+                      url={fileUrl(message.file_id)}
                       onDownload={onDownload}
                     />
                   ) : (
@@ -175,10 +179,10 @@ export default function Conversation({ chat, myId, messages, onlineIds, onSend, 
           <Button
             kind="quiet"
             onClick={() => pickerRef.current?.click()}
-            disabled={sharing}
+            disabled={sharing !== null}
             title="share a file with this chat, up to 50 MB"
           >
-            {sharing ? 'SENDING…' : 'FILE'}
+            {sharing === null ? 'FILE' : `SENDING ${Math.round(sharing * 100)}%`}
           </Button>
           <Field
             value={draft}
@@ -201,47 +205,63 @@ export default function Conversation({ chat, myId, messages, onlineIds, onSend, 
   );
 }
 
-// A shared file in the conversation: what it is, and a way to fetch it while it
-// still exists. The server drops a file when the person who shared it leaves.
+// A shared file in the conversation: what it is, a look at it if it's an
+// image, a video or a sound, and a way to save it, while it still exists. The
+// server drops a file when the person who shared it leaves, and the preview
+// goes with it.
 function FileLine({
   file,
   gone,
+  url,
   onDownload,
 }: {
   file: ChatFileMessage;
   gone: boolean;
-  onDownload: (fileId: string, name: string) => Promise<void>;
+  url: string;
+  onDownload: (fileId: string, name: string) => void;
 }) {
-  const [fetching, setFetching] = useState(false);
-
-  async function download() {
-    setFetching(true);
-    try {
-      await onDownload(file.file_id, file.name);
-    } finally {
-      setFetching(false);
-    }
-  }
-
+  // the same rule the server uses to decide what it sends as itself
+  const shown = safeMediaType(file.content_type);
   // "octet-stream" is the label for "bytes, kind unknown", which says nothing
   // worth reading
   const kind = file.content_type === 'application/octet-stream' ? 'FILE' : file.content_type.toUpperCase();
 
   return (
-    <div style={{ display: 'flex', alignItems: 'center', gap: 12, flexWrap: 'wrap' }}>
-      <div style={{ minWidth: 0 }}>
-        <div>{file.name}</div>
-        <Label style={{ marginTop: 2 }}>
-          {sizeOf(file.size)} · {kind}
-        </Label>
+    <div style={{ display: 'flex', flexDirection: 'column', gap: 10 }}>
+      {shown && !gone ? <Preview kind={shown} url={url} name={file.name} /> : null}
+      <div style={{ display: 'flex', alignItems: 'center', gap: 12, flexWrap: 'wrap' }}>
+        <div style={{ minWidth: 0 }}>
+          <div>{file.name}</div>
+          <Label style={{ marginTop: 2 }}>
+            {sizeOf(file.size)} · {kind}
+          </Label>
+        </div>
+        {gone ? (
+          <Label>GONE: THEY LEFT</Label>
+        ) : (
+          <Button kind="quiet" onClick={() => onDownload(file.file_id, file.name)}>
+            DOWNLOAD
+          </Button>
+        )}
       </div>
-      {gone ? (
-        <Label>GONE: THEY LEFT</Label>
-      ) : (
-        <Button kind="quiet" onClick={() => { void download(); }} disabled={fetching}>
-          {fetching ? 'FETCHING…' : 'DOWNLOAD'}
-        </Button>
-      )}
     </div>
   );
+}
+
+const media: CSSProperties = { display: 'block', maxWidth: '100%', borderRadius: radius.bar - 4 };
+
+// The file itself, fetched by the element straight from the server: the page
+// never holds the bytes. An image waits until it's scrolled near (`lazy`), so a
+// chat of a hundred pictures fetches the few on screen. A video or a sound
+// fetches only its start (`metadata`) until it's played, and then asks for
+// pieces with Range as it goes, so a long one never sits in memory whole.
+function Preview({ kind, url, name }: { kind: string; url: string; name: string }) {
+  if (kind.startsWith('image/')) {
+    return <img src={url} alt={name} loading="lazy" style={{ ...media, maxHeight: 260 }} />;
+  }
+  if (kind.startsWith('video/')) {
+    // playsInline, or an iPhone takes it full screen
+    return <video src={url} controls playsInline preload="metadata" style={{ ...media, width: 320, maxHeight: 260 }} />;
+  }
+  return <audio src={url} controls preload="metadata" style={{ ...media, width: 280 }} />;
 }

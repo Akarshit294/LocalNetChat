@@ -74,30 +74,49 @@ def reduce(state: AppState, event: Event):
     """
     event_type = event.type
     if event_type == "join_requested":
-        if event.payload.get("user"):
-            error = validate_username(event.payload["user"].user_name)
-            if error:
+        user = event.payload.get("user")
+        session_id = event.payload.get("session_id")
+        if user:
+            # only someone who has just logged in may join: the session is the proof
+            if not session_id or session_id not in state.sessions:
                 return state, [
                     Command(
                         type="close",
-                        user_id=event.payload["user"].id,
+                        user_id=user.id,
+                        code=4003,
+                        reason="Join first"
+                    )
+                ]
+
+            # One session, one try: it's used up whether this join works or not.
+            # If it works it lives on as the user's token and goes when they do,
+            # so `sessions` only ever holds logins waiting to connect, and a
+            # rename can't leave a copy behind that still lets someone in.
+            sessions = {sid: name for sid, name in state.sessions.items() if sid != session_id}
+            used_up = state.model_copy(update={"sessions": sessions})
+
+            error = validate_username(user.user_name)
+            if error:
+                return used_up, [
+                    Command(
+                        type="close",
+                        user_id=user.id,
                         code=4002,
                         reason=error
                     )
                 ]
 
-            if is_name_taken(state, event.payload["user"].user_name):
-                return state, [
+            if is_name_taken(state, user.user_name):
+                return used_up, [
                     Command(
                         type="close",
-                        user_id=event.payload["user"].id,
+                        user_id=user.id,
                         code=4001,
                         reason="Username already taken"
                     )
                 ]
 
-            user = event.payload["user"]
-            new_state = state.model_copy(update={
+            new_state = used_up.model_copy(update={
                 "users": {**state.users, user.id: user},
                 "known_names": {**state.known_names, user.id: user.user_name},
             })

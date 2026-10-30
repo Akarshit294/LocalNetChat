@@ -19,7 +19,7 @@ export type Realtime = {
     messages: Record<string, ChatEntry[]>;   // by chat id: what was said and shared while we were here
     unread: Record<string, number>;                // by chat id
     openChatId: string;
-    connect: (name: string) => void;
+    connect: (name: string) => Promise<void>;   // logs in, then opens the socket
     disconnect: () => void;
     rename: (name: string) => void;
     openChat: (userId: string) => void;            // message this person
@@ -28,10 +28,14 @@ export type Realtime = {
     createGroup: (userIds: string[], name: string) => void;   // a group with us and these people
     addMember: (chatId: string, userId: string) => void;
     removeMember: (chatId: string, userId: string) => void;   // our own id means leaving
-    // Files go over HTTP. Both finish when the request does, and say what went
-    // wrong themselves, so a page only needs to know when to stop waiting.
-    shareFile: (chatId: string, file: File) => Promise<void>;
-    downloadFile: (fileId: string, name: string) => Promise<void>;
+    // Files go over HTTP. shareFile finishes when the upload does, reporting 0 to
+    // 1 as it goes, and says what went wrong itself, so a page only needs to know
+    // when to stop waiting.
+    shareFile: (chatId: string, file: File, onProgress?: (fraction: number) => void) => Promise<void>;
+    // where an <img>, <video> or <audio> fetches a file from by itself
+    fileUrl: (fileId: string) => string;
+    // the browser's download manager saves it, without the page holding the bytes
+    downloadFile: (fileId: string, name: string) => void;
     call: Call;   // the voice or video call in progress, and how to start or end one
 };
 

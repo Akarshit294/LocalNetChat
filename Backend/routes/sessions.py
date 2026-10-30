@@ -1,14 +1,17 @@
-from fastapi import APIRouter, HTTPException, Response
+from fastapi import APIRouter, HTTPException, Response, Request
 from realtime.validation import validate_username, is_name_taken
 from realtime.types import SessionRequest, Event
 from realtime.manager import ws_manager
+from routes.guards import same_origin
 import secrets
 
 router = APIRouter()
 
 @router.post("/sessions")
-async def create_session(session_request: SessionRequest):
+async def create_session(session_request: SessionRequest, request: Request):
     """Create a new session by validating user name and returning cookie."""
+    if not same_origin(request.headers.get("Origin"), request.headers.get("Host")):
+        raise HTTPException(status_code=403, detail="Cross-origin request not allowed")
 
     name = session_request.user_name.strip()
     error = validate_username(name)

@@ -24,7 +24,7 @@ def system_message(text: str):
 
 def welcome_message(user):
     """Sent only to the person who just joined: this is who you are."""
-    return {"type": "welcome", "user_id": str(user.id), "user_name": user.user_name, "token": user.token}
+    return {"type": "welcome", "user_id": str(user.id), "user_name": user.user_name}
 
 
 def error_message(reason: str):

@@ -11,7 +11,18 @@ export function sizeOf(bytes: number): string {
   return `${(bytes / (1024 * 1024)).toFixed(1)} MB`;
 }
 
-// Hand a downloaded file to the browser to save, under the name it was shared as.
+// Save a file from the server: a link with `download` on it, clicked. The
+// browser's own download manager fetches it, cookie and all, and writes it
+// straight to disk as it arrives, so the page never holds the bytes, however big.
+export function startDownload(url: string, name: string) {
+  const link = document.createElement('a');
+  link.href = url;
+  link.download = name;
+  link.click();
+}
+
+// Hand a file that's already in this tab to the browser to save, under the name
+// it was shared as. Only the ?fake server needs this: its files never leave the tab.
 //
 // The bytes are already in this tab's memory, so they get a temporary blob:
 // address, and a link with `download` on it saves whatever it points to. The

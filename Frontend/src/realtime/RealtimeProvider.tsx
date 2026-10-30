@@ -5,7 +5,7 @@ import { useWebSocket } from 'react-use-websocket/dist/lib/use-websocket';
 import CallPanel from '../components/CallPanel.tsx';
 import Notices from '../components/Notices.tsx';
 import { api, reasonOf, WS_URL } from '../lib/api.ts';
-import { saveBlob } from '../lib/files.ts';
+import { startDownload } from '../lib/files.ts';
 import type {
     ChatEntry,
     ChatSummary,
@@ -20,17 +20,13 @@ import { useCall } from './useCall.ts';
 // Owns the one socket and everything the server tells us. It sits above the
 // routes, so moving between pages never drops the connection.
 export default function RealtimeProvider({ children }: { children: ReactNode }) {
+    // Set once POST /sessions has answered with our cookie. The socket's address
+    // never changes: who we are travels in the cookie, not in the URL.
     const [shouldConnect, setShouldConnect] = useState(false);
-    // the name we dialled with. Fixed for the life of this socket, because changing
-    // the URL would make the hook drop the connection and open a new one.
-    const [connectName, setConnectName] = useState('');
     // the name the server knows us by right now. A rename changes this, not the URL.
     const [joinedName, setJoinedName] = useState('');
     // our own id, from the server's welcome. Needed to mark "you", and to address people later.
     const [myId, setMyId] = useState('');
-    // Our secret for HTTP requests, from the welcome. A ref, not state: nothing is
-    // drawn from it, and it must never end up on screen or in the context.
-    const token = useRef('');
     const [users, setUsers] = useState<ChatUser[]>([]);
     // who is new, so the page can ping them. Everyone in the first list we get
     // was already here, so only later arrivals count.
@@ -46,10 +42,8 @@ export default function RealtimeProvider({ children }: { children: ReactNode }) 
     // which chat is on screen, readable from inside the socket handler
     const openChatIdRef = useRef('');
 
-    const ws_url = `${WS_URL}?username=${encodeURIComponent(connectName)}`;
-
     const { readyState, sendJsonMessage } = useWebSocket<ServerMessage>(
-        ws_url,
+        WS_URL,
         {
             onMessage: (event) => {
                 // the server sends the whole list again on every change
@@ -63,7 +57,6 @@ export default function RealtimeProvider({ children }: { children: ReactNode }) 
                 } else if (message.type === 'welcome') {
                     setMyId(message.user_id);
                     setJoinedName(message.user_name);
-                    token.current = message.token;
                 } else if (message.type === 'renamed') {
                     // the server accepted it, so this is the name it knows us by now
                     setJoinedName(message.new_name);
@@ -96,9 +89,7 @@ export default function RealtimeProvider({ children }: { children: ReactNode }) 
                 setSystemLine('');
                 toast.dismiss();   // whatever was on screen was about a connection we no longer have
                 setJoinedName('');
-                setConnectName('');
                 setMyId('');
-                token.current = '';   // the server has already forgotten it
                 setChats([]);
                 setMessages({});
                 setUnread({});
@@ -106,16 +97,24 @@ export default function RealtimeProvider({ children }: { children: ReactNode }) 
                 dropCall();
             },
         },
-        shouldConnect && !!connectName
+        shouldConnect
     );
 
     // A call is set up over this same socket, so it is given the way to send on it.
     // Everything else about a call is in useCall.
     const { call, onMessage: onCallMessage, drop: dropCall } = useCall(sendJsonMessage);
 
-    function connect(name: string) {
+    // Log in over HTTP first: the answer sets our session cookie, and only then is
+    // the socket opened, carrying it. A name the server refuses is said on the join
+    // page, the same place a refused join has always been explained.
+    async function connect(name: string) {
         setCloseReason('');
-        setConnectName(name);   // used for the URL, and never changed after this
+        try {
+            await api.createSession(name);
+        } catch (error) {
+            setCloseReason(reasonOf(error));
+            return;
+        }
         setJoinedName(name);    // what the server will know us as, until a rename
         setShouldConnect(true);
     }
@@ -168,21 +167,16 @@ export default function RealtimeProvider({ children }: { children: ReactNode }) 
     // A file goes up over HTTP, not this socket: one big upload here would hold
     // up every chat message behind it. Nothing is added to the conversation from
     // here. The server's "file" note does that, for us as for everyone.
-    async function shareFile(chatId: string, file: File) {
+    async function shareFile(chatId: string, file: File, onProgress?: (fraction: number) => void) {
         try {
-            await api.shareFile(token.current, chatId, file);
+            await api.shareFile(chatId, file, onProgress);
         } catch (error) {
             toast.error(reasonOf(error));
         }
     }
 
-    // fetched into this tab's memory first, then handed to the browser to save
-    async function downloadFile(fileId: string, name: string) {
-        try {
-            saveBlob(await api.fetchFile(token.current, fileId), name);
-        } catch (error) {
-            toast.error(reasonOf(error));
-        }
+    function downloadFile(fileId: string, name: string) {
+        startDownload(api.fileUrl(fileId), name);
     }
 
     const realtime = {
@@ -207,6 +201,7 @@ export default function RealtimeProvider({ children }: { children: ReactNode }) 
         addMember,
         removeMember,
         shareFile,
+        fileUrl: api.fileUrl,
         downloadFile,
         call,
     };

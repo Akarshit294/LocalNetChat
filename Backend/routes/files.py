@@ -1,24 +1,24 @@
-from fastapi import APIRouter, Header, HTTPException, Request, Response
+from fastapi import APIRouter, Header, HTTPException, Request, Response, Cookie
 import re
 import uuid
 from realtime.manager import ws_manager
 from realtime.reducer import can_download, file_upload_refusal
 from realtime.types import SharedFile, Validate, Event
 from realtime.validation import user_for_token, validate_file_name, safe_media_type
+from routes.guards import same_origin
 from datetime import datetime
 
 router = APIRouter()
 
 
-# HTTP's half of "who is this?": read the header, and answer 401 if nobody.
-# The pure half, whose token this is, is user_for_token in validation.py.
-def who_is_asking(authorization: str | None) -> uuid.UUID:
-    """The user this request is from, by its token. 401 if there's no valid one."""
-    scheme, _, token = (authorization or "").partition(" ")
-    user_id = user_for_token(ws_manager.state, token) if scheme.lower() == "bearer" else None
+# HTTP's half of "who is this?": the session cookie, and 401 if it's nobody's.
+# The pure half, whose session this is, is user_for_token in validation.py: a
+# session id becomes its user's token when they join.
+def who_is_asking(session: str | None) -> uuid.UUID:
+    """The user this request is from, by their session cookie. 401 if there's no valid one."""
+    user_id = user_for_token(ws_manager.state, session)
     if user_id is None:
-        raise HTTPException(status_code=401, detail="Invalid or missing token",
-                            headers={"WWW-Authenticate": "Bearer"})
+        raise HTTPException(status_code=401, detail="Join first")
     return user_id
 
 
@@ -28,12 +28,17 @@ async def share_file(
     chat_id: uuid.UUID,                                 # ?chat_id=…
     name: str,                                          # ?name=…
     content_type: str | None = Header(default=None),    # Content-Type: what kind of bytes
-    authorization: str | None = Header(default=None),   # Authorization: Bearer <token>
     content_length: int | None = Header(default=None),  # Content-Length: how many, by its own word
+    session: str | None = Cookie(default=None),         # Cookie: session=<id>, sent by the browser itself
 ):
     """Share a file into a chat. The body is the file's bytes, nothing wrapped around them."""
-    # 1. who is it? An HTTP request has no socket to say, so the token does
-    user_id = who_is_asking(authorization)
+    # 0. from our own page? The cookie goes along by itself, so a page on another
+    # site could make the browser send this POST as you (CSRF)
+    if not same_origin(request.headers.get("origin"), request.headers.get("host")):
+        raise HTTPException(status_code=403, detail="Cross-origin request not allowed")
+
+    # 1. who is it? An HTTP request has no socket to say, so the session cookie does
+    user_id = who_is_asking(session)
 
     # 2. may they share into this chat? Asked before the body is read, so a
     # stranger is turned away without us reading 50 MB of theirs
@@ -130,12 +135,14 @@ def parse_range(header: str | None, total: int) -> tuple[int, int] | str | None:
 @router.get("/files/{file_id}")
 async def get_file(
     file_id: uuid.UUID,
-    authorization: str | None = Header(default=None),   # Authorization: Bearer <token>
     # `range` alone would hide Python's own range(); the alias still reads "Range"
     range_header: str | None = Header(default=None, alias="range"),
+    # No Origin check: a GET changes nothing, and another site can't read what
+    # comes back. The cookie is what lets a <video> or a link fetch this by itself.
+    session: str | None = Cookie(default=None),
 ):
     """Fetch a file, or one piece of it. The body is its bytes, nothing wrapped around them."""
-    user_id = who_is_asking(authorization)
+    user_id = who_is_asking(session)
 
     # one answer for "no such file" and "not yours", so a stranger can't learn
     # which files exist. GitHub does the same for a private repo you can't see.
