@@ -66,7 +66,7 @@ socket message  →  event  →  dispatch  →  reduce(state, event)  →  (new 
 
 ```
 Backend/
-├── main.py                 app, CORS, include routers. Nothing else.
+├── main.py                 app, include routers. Nothing else. (CORS is off: the page only ever calls its own origin.)
 ├── routes/                 the shell: HTTP and socket entry points only
 │   ├── health.py           GET /health
 │   ├── users.py            GET /users (debug), GET /users/check?username=
