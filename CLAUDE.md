@@ -179,7 +179,7 @@ everything behind it. An HTTP request gets its own connection.
 | HTTP (the page calls `/api/...`) | carries | answers |
 |---|---|---|
 | `POST /files?chat_id=&name=` | `Authorization: Bearer <token>`; the body is the file's raw bytes; `Content-Type` is its type | `201 {file_id}` · `401` no or unknown token · `403` not your chat, or nobody else in it online · `400` bad name · `413` over 50 MB |
-| `GET /files/{file_id}` | `Authorization: Bearer <token>` | `200` the raw bytes, with the file's `Content-Type` · `401` · `404` no such file, **or not yours**: one answer, so a stranger can't learn which files exist |
+| `GET /files/{file_id}` | `Authorization: Bearer <token>`; optional `Range: bytes=…` | `200` the raw bytes · `206` one piece, with `Content-Range` · `416` a range starting past the end, with `Content-Range: bytes */<size>` · `401` · `404` no such file, **or not yours**: one answer, so a stranger can't learn which files exist |
 
 **On HTTP, identity comes from the token**, because a request has no socket the
 server knows. Each join gets a random token, sent only in `welcome`, and gone when
@@ -199,6 +199,25 @@ the request. A chat id the page sends would let someone name a chat of their own
 and pass. The rules in `reducer.py` return reasons or yes/no, never status codes;
 the route picks the code. `who_is_asking()` is HTTP's half of identity (header,
 401) and lives in the route file; `user_for_token()` is the pure half.
+
+**Only media is served as itself.** A file's label is whatever the uploader wrote,
+so a file labelled `text/html` and opened from our address would run as our site
+(stored XSS). `safe_media_type()` cleans the label (`Image/SVG+xml; charset=…` is
+still an SVG), allows only `image/`, `video/` and `audio/`, never SVG (a document
+that can carry scripts), and returns the cleaned type, which is the one served:
+the label checked and the label sent are the same string. Anything else goes as
+`application/octet-stream` with `Content-Disposition: attachment`, and every
+response carries `X-Content-Type-Options: nosniff` so the browser never guesses
+a type from the bytes.
+
+**`Range` is how a `<video>` skips ahead** without downloading what's before, and
+how a broken download resumes. `parse_range()` answers one of three: nothing we
+read (no header, several ranges, nonsense: send it all, `200`, which a server may
+always do), a piece (`206`), or a range starting at or past the end (`416`).
+`bytes=-200` is the last 200 bytes, and an end past the file is cut back to it.
+The header counts its end in; the slice leaves it out, hence `end - 1` in
+`Content-Range`. The parameter is `range_header` with `alias="range"`, since
+`range` would hide Python's own.
 
 **The four `call_*` notes are post.** The server reads `user_id`, sends the same
 note to that person with `from_id` in its place (taken from the socket, like every

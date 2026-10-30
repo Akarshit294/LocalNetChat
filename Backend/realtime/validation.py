@@ -74,3 +74,21 @@ def user_for_token(state, token: str | None) -> uuid.UUID | None:
         if secrets.compare_digest(user.token.encode(), token.encode()):
             return user_id
     return None
+
+def safe_media_type(content_type: str) -> str | None:
+    """The file's type, cleaned, if the browser can show it inline. None if it should be downloaded.
+
+    Only images, video and audio, and never SVG: an SVG is a document that can
+    carry scripts, and opened from our address it would run them as our site.
+    Anything else is served as application/octet-stream, so the browser saves it.
+
+    The label comes from whoever uploaded the file, so it's cleaned before it's
+    checked: "Image/SVG+xml; charset=utf-8" is still an SVG. The cleaned type is
+    what gets served, so the label checked and the label sent are the same one.
+    """
+    kind = content_type.split(";")[0].strip().lower()
+    if kind == "image/svg+xml":
+        return None
+    if kind.startswith(("image/", "video/", "audio/")):
+        return kind
+    return None
