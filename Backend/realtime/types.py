@@ -36,6 +36,9 @@ class Validate:
     GROUP_NAME_MAX_LENGTH : int = 30
     FILE_MAX_BYTES : int = 50 * 1024 * 1024   # 50 MB, all of it in the laptop's memory
     FILE_NAME_MAX_LENGTH : int = 255
+    # A login that hasn't connected by then is dropped. The page connects within
+    # milliseconds; this only clears logins nobody came back for.
+    SESSION_TTL_SECONDS : int = 10
 
 class AppState(BaseModel):
     # frozen: nobody can edit a state object. The reducer returns a new one instead.
@@ -60,6 +63,10 @@ class Command(BaseModel):
     code: int | None = None
     reason: str | None = None
     message: dict | None = None
+    # "schedule": the reducer can't start a timer, so it asks for one. After
+    # `delay` seconds the manager dispatches `event`, like any other event.
+    delay: float | None = None
+    event: Event | None = None
 
 # What a client may send us. Anything that doesn't fit one of these is refused,
 # so the reducer only ever sees messages of the right shape.

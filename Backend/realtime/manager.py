@@ -44,6 +44,10 @@ class WebSocketManager:
         self.state = AppState()
         self.sockets = {}
         self._lock = asyncio.Lock()
+        # Timers waiting to dispatch. Python keeps only a weak reference to a
+        # running task, so one nothing points at can be collected mid-sleep and
+        # its event never sent. Each removes itself when it's done.
+        self._timers = set()
 
     async def dispatch(self, event: Event):
         async with self._lock:
@@ -71,6 +75,18 @@ class WebSocketManager:
                 except Exception:
                     print(f"Failed to send message to {command.user_id}, dropping the socket")
                     self.sockets.pop(command.user_id, None)
+        elif command.type == "schedule":
+            # Not `await asyncio.sleep(...)` here: run() is called from dispatch(),
+            # which holds the lock, so waiting here would stop every other event
+            # for the whole delay. The wait runs on its own, and returns at once.
+            timer = asyncio.create_task(self._dispatch_later(command.delay, command.event))
+            self._timers.add(timer)
+            timer.add_done_callback(self._timers.discard)
+
+    async def _dispatch_later(self, delay: float, event: Event):
+        await asyncio.sleep(delay)
+        # by now the lock is free again, and this goes through it like anything else
+        await self.dispatch(event)
 
     async def connect(self, websocket: WebSocket, session_id: str):
         await websocket.accept()

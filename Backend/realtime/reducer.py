@@ -9,7 +9,7 @@ from realtime.messages import (
     welcome_message,
     call_message,
 )
-from realtime.types import AppState, Chat, Command, Event
+from realtime.types import AppState, Chat, Command, Event, Validate
 from realtime.validation import is_name_taken, validate_group_name, validate_username
 
 
@@ -536,7 +536,23 @@ def reduce(state: AppState, event: Event):
                 return state, []
             
             new_state = state.model_copy(update={"sessions": {**state.sessions, session_id: user_name}})
-            return new_state, []
+            # a login nobody connects with would sit here until a restart, so it
+            # gets a deadline. The reducer can't start a timer; it asks for one.
+            return new_state, [
+                Command(
+                    type="schedule",
+                    delay=Validate.SESSION_TTL_SECONDS,
+                    event=Event(type="session_expired", payload={"session_id": session_id}),
+                )
+            ]
+
+    elif event_type == "session_expired":
+        session_id = event.payload.get("session_id")
+        # Still waiting means nobody connected with it in time, so it goes. Gone
+        # already means it was used to join (or refused), and there's nothing to do.
+        if session_id in state.sessions:
+            sessions = {sid: name for sid, name in state.sessions.items() if sid != session_id}
+            return state.model_copy(update={"sessions": sessions}), []
 
     # nothing to change: hand back the state we were given
     return state, []

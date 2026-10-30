@@ -61,7 +61,7 @@ The server is event-based, in the style described in
 socket message  →  event  →  dispatch  →  reduce(state, event)  →  (new state, commands)
                                               pure                       ↓
                                                                     the manager runs them
-                                                                    (send / broadcast / close)
+                                                                    (send / broadcast / close / schedule)
 ```
 
 ```
@@ -85,7 +85,11 @@ Backend/
 
 - `reduce()` is pure: no I/O, no clock, no randomness, no `self`. It returns a new
   `AppState` and a list of commands. Anything random or time-based (user ids, chat
-  ids, timestamps) is made in the shell and passed in on the event.
+  ids, timestamps) is made in the shell and passed in on the event. A *delay* is a
+  command: `schedule` asks the manager to dispatch an event later. The manager runs
+  it as a background task and never waits inside `run()`, which holds the lock, and
+  keeps a reference to each task (`_timers`), since Python only holds running tasks
+  weakly.
 - **Only `dispatch()` writes state**, and it holds an `asyncio.Lock` across
   reduce → store → run commands, so two events can't interleave and leave someone
   with a stale list. Reading state anywhere is fine.
@@ -193,7 +197,10 @@ its own, and page scripts can't read an `HttpOnly` one, so XSS can't steal it.
    name) and the answer sets `session=<id>`; a cookie only goes out for a session
    that was really stored. The name is **not reserved**: anyone can call this
    without ever opening the socket, so reserving would let one loop lock every name
-   away. The socket's join is the real check, first to connect wins.
+   away. The socket's join is the real check, first to connect wins. A login
+   nobody connects with is dropped after `Validate.SESSION_TTL_SECONDS` (10 s): the
+   reducer answers `session_requested` with a `schedule` for `session_expired`,
+   which removes the session if it's still waiting and does nothing if it was used.
 2. **Join:** `/ws` (no name in the URL any more) carries the cookie. The manager
    reads the name from the session, and the reducer refuses a missing or unknown
    one with **4003 "Join first"**. **One session, one try:** any join uses it up,
