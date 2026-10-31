@@ -59,8 +59,9 @@ export function safeMediaType(contentType: string): string | null {
 
 export const FILE_NAME_MAX_LENGTH = 255;
 // Same as Validate.FILE_MAX_BYTES. Checked here so a file that's too big is
-// turned away before it's uploaded, not after the server has read 50 MB of it.
-export const FILE_MAX_BYTES = 50 * 1024 * 1024;
+// turned away before it's uploaded, not after the server has read 20 GB of it.
+export const FILE_MAX_BYTES = 20 * 1024 * 1024 * 1024;
+export const FILE_TOO_BIG = 'That file is over 20 GB';
 
 // Same rules as validate_file_name in Backend/realtime/validation.py - keep the
 // two in sync. Spaces are fine here: "holiday photo.jpg" is a normal file name.

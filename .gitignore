@@ -9,5 +9,8 @@ Backend/.venv/
 Backend/.env
 __pycache__/
 
+#Ignore uploaded files
+uploads/
+
 # Claude Code: local settings and worktrees
 .claude/

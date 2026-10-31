@@ -3,7 +3,7 @@ import { toast } from 'react-hot-toast/headless';
 import { canWrite, clockOf } from '../lib/chats.ts';
 import { sizeOf } from '../lib/files.ts';
 import type { ChatEntry, ChatFileMessage, ChatSummary } from '../lib/messages.ts';
-import { FILE_MAX_BYTES, safeMediaType, validateFileName } from '../lib/validation.ts';
+import { FILE_MAX_BYTES, FILE_TOO_BIG, safeMediaType, validateFileName } from '../lib/validation.ts';
 import { Avatar } from '../ui/Avatar.tsx';
 import { revealStyle } from '../ui/motion.ts';
 import { Bar, Button, Field, Label, Stage } from '../ui/primitives.tsx';
@@ -69,7 +69,7 @@ export default function Conversation({ chat, myId, messages, onlineIds, onSend, 
       return;
     }
     const problem =
-      validateFileName(file.name) ?? (file.size > FILE_MAX_BYTES ? 'That file is over 50 MB' : null);
+      validateFileName(file.name) ?? (file.size > FILE_MAX_BYTES ? FILE_TOO_BIG : null);
     if (problem) {
       toast.error(problem);
       return;
@@ -180,7 +180,7 @@ export default function Conversation({ chat, myId, messages, onlineIds, onSend, 
             kind="quiet"
             onClick={() => pickerRef.current?.click()}
             disabled={sharing !== null}
-            title="share a file with this chat, up to 50 MB"
+            title="share a file with this chat, up to 20 GB"
           >
             {sharing === null ? 'FILE' : `SENDING ${Math.round(sharing * 100)}%`}
           </Button>

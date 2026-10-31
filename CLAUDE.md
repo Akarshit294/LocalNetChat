@@ -19,6 +19,11 @@ speed. Don't reach for a library that hides the part they came to learn.
 - Keep explanations **short and plain**. Big picture first, then the one next step.
 - **Verify before handing back**: type-check, lint, and an actual run (see Testing).
   They will run what you claim.
+- **Lean comments.** The owner doesn't want explanations stuffed into the code. A
+  comment is one short line, and only for a trap: something a tidy-up would break
+  (`# never await here: dispatch() holds the lock`). The *how* and *why* of a
+  feature go in `docs/` or this file; the why of a change goes in its commit message.
+  Much of the existing code predates this and is heavier; don't add to that.
 - **Commit only when asked.** Commit messages are conventional (`feat:`, `refactor:`)
   with a body explaining *why*. This repo commits as their personal identity, set in
   `.git/config`; never let it fall back to a work address.
@@ -78,6 +83,7 @@ Backend/
     ├── reducer.py          reduce(): pure. Every rule lives here.
     ├── manager.py          the one WebSocketManager: state, sockets, lock, dispatch, run
     ├── messages.py         builders for everything sent to a page. Pure.
+    ├── storage.py          where shared files live on disk (UPLOAD_FOLDER_PATH, default Backend/uploads)
     └── validation.py       name rules, "is this name taken", whose session this is, what may be shown. Pure.
 ```
 
@@ -183,7 +189,7 @@ everything behind it. An HTTP request gets its own connection.
 
 | HTTP (the page calls `/api/...`) | carries | answers |
 |---|---|---|
-| `POST /files?chat_id=&name=` | the session cookie; `Origin`; the body is the file's raw bytes; `Content-Type` is its type | `201 {file_id}` · `401` "Join first" · `403` another site's `Origin`, not your chat, or nobody else in it online · `400` bad name · `413` over 50 MB |
+| `POST /files?chat_id=&name=` | the session cookie; `Origin`; the body is the file's raw bytes; `Content-Type` is its type | `201 {file_id}` · `401` "Join first" · `403` another site's `Origin`, not your chat, or nobody else in it online · `400` bad name · `413` over 20 GB · `507` not enough free disk |
 | `POST /sessions` | JSON `{"user_name": "…"}`; `Origin` | `201` + `Set-Cookie: session=<id>; HttpOnly; Secure; SameSite=Strict; Path=/` · `400` a broken rule, with the reason · `409` someone online has the name · `403` another site's `Origin` |
 | `GET /files/{file_id}` | the session cookie; optional `Range: bytes=…` | `200` the raw bytes · `206` one piece, with `Content-Range` · `416` a range starting past the end, with `Content-Range: bytes */<size>` · `401` · `404` no such file, **or not yours**: one answer, so a stranger can't learn which files exist |
 
@@ -232,13 +238,31 @@ so the JWT can't be taken back and lives 60 seconds; it's readable by scripts, s
 it's short to limit XSS. Here one process holds every session in memory, a lookup
 is instant, a session dies the moment you leave, and the cookie is `HttpOnly`.
 
-A file is kept in memory, in `AppState.files`, until the person who shared it
-leaves. The route asks `file_upload_refusal()` before reading the body, so a stranger is
-turned away without 50 MB being read, then counts while reading because
-`Content-Length` can be missing or lie. The reducer asks `file_upload_refusal()` again
-under the lock, and the route answers by whether the file landed, the way
-`connect()` does after a join. A new state shares the bytes with the old one, so
-holding them in state costs nothing on each change.
+**A file's bytes live on disk; the state only describes them.** Like sockets, a
+file on disk is a resource the shell owns: `AppState.files` holds name, type, size,
+owner, chat and `path`, never the bytes. The file is `uploads/<its id>`, never the
+uploader's name, which could be `../main.py` (path traversal) or clash with another.
+`storage.py` is the one place the folder is defined, relative to `Backend/`, and the
+app empties it at startup (`lifespan` in `main.py`): nothing survives a restart.
+
+- **Upload** (`POST /files`, up to 20 GB): `file_upload_refusal()` and the size and
+  free-space checks run before the body is read, so a stranger or an oversized file
+  is turned away without being read. Each chunk is written as it arrives (`aiofiles`,
+  so the event loop never blocks on disk), counting, so memory stays flat: a 1 GB
+  upload moved the server from 57 to 58 MB. `size` is the count of bytes written,
+  never `Content-Length`, which can be missing or lie. Any failure deletes the half
+  file; a full disk (ENOSPC) is `507 Insufficient Storage`, as is a `Content-Length`
+  bigger than the free space less `Validate.DISK_SPARE_BYTES`.
+- **Download** (`GET /files/{id}`): a `StreamingResponse` reads only the range asked
+  for, a chunk at a time. Between chunks it checks the file is still shared, and
+  stops if the sharer left: the response ends short of its `Content-Length`, so the
+  browser treats it as failed, and uvicorn logs one "shorter than Content-Length"
+  traceback for it. That's expected.
+- **Deleting is I/O, so the reducer asks for it.** `user_left` drops the files from
+  the state at once and returns a `delete_file` command per file; a refused upload
+  (`file_shared`) returns one for its own bytes. The state is the truth and the disk
+  follows: nothing dispatches from inside `run()`, which would wait on the lock it's
+  already holding.
 
 A download asks `can_download()`, which takes the chat from the **file**, never from
 the request. A chat id the page sends would let someone name a chat of their own
@@ -416,7 +440,7 @@ into a chat you're not in, an empty or over-long message, a member dropping mid-
 adding someone who has just left, and the last person leaving a group.
 
 Worth re-testing whenever files change: a text file and a binary one downloaded byte
-for byte, a name with a space, a file over 50 MB (refused by the page, never sent),
+for byte, a name with a space, a file over 20 GB (refused by the page, never sent),
 the file counting as unread in a chat that isn't open, the sharer leaving (lines
 turn to GONE, no DOWNLOAD), and someone outside the chat asking for it (404). In
 headless Chrome, hold the `Browser.setDownloadBehavior` connection open for the
@@ -435,5 +459,13 @@ the middle, and capture `Network.requestWillBeSentExtraInfo` to see the headers.
 
 The reducer is pure, so an awkward state is often quicker to check by calling
 `reduce()` directly with a hand-built `AppState` than by driving sockets to it.
+
+**Point a throwaway server at its own uploads folder** with an absolute
+`UPLOAD_FOLDER_PATH` in the environment (it wins over `.env`), never at
+`Backend/uploads`: the app empties its folder on startup. Clear one with
+`rm -f "${VAR:?}"/*`, never a bare `$VAR/*`, which becomes `/*` if the variable is
+empty. Disk-full can't be tested by filling the disk: patch `routes.files.free_bytes`
+and `routes.files.aiofiles.open` in-process instead. `/proc/<pid>/status` (VmRSS)
+shows the server's memory while a large upload runs.
 
 Always stop a throwaway server afterwards and leave the owner's servers running.

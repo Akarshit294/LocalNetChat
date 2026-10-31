@@ -155,8 +155,7 @@ def reduce(state: AppState, event: Event):
                 for uid, name in state.known_names.items()
                 if uid in users or uid in still_named
             }
-            # what they shared goes with them. Once no state holds a file, its
-            # bytes are freed.
+            # what they shared goes with them: out of the state now, off the disk next
             files = {
                 file_id: file
                 for file_id, file in state.files.items()
@@ -178,6 +177,11 @@ def reduce(state: AppState, event: Event):
                     type="broadcast",
                     message=system_message(f"{who_left} has left the chat")
                 ),
+                *[
+                    Command(type="delete_file", path=file.path)
+                    for file in state.files.values()
+                    if file.owner_id == user_id
+                ],
                 # everyone who shared a chat with them sees them go offline
                 *chats_commands(new_state, chat_mates(state, user_id)),
             ]
@@ -505,11 +509,11 @@ def reduce(state: AppState, event: Event):
         # the route built the file with owner_id from the token, so who shared it
         # is inside the file and not repeated beside it
         file = event.payload.get("file")
-        if file and file.owner_id in state.users:
-            # no error message here: the upload was an HTTP request, and its
-            # answer says what went wrong
-            if file_upload_refusal(state, file.owner_id, file.chat_id):
-                return state, []
+        if file:
+            # refused: its bytes are already on disk, so they go; the upload's
+            # HTTP answer says why
+            if file.owner_id not in state.users or file_upload_refusal(state, file.owner_id, file.chat_id):
+                return state, [Command(type="delete_file", path=file.path)]
 
             chat = state.chats[file.chat_id]
             new_state = state.model_copy(update={"files": {**state.files, file.id: file}})

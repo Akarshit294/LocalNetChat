@@ -18,6 +18,7 @@ from realtime.types import (
     SendMessage,
 )
 from realtime.reducer import reduce
+from realtime.storage import delete_quietly
 from realtime.validation import is_name_taken
 import uuid
 import asyncio
@@ -56,10 +57,12 @@ class WebSocketManager:
                 await self.run(command)
 
     async def run(self, command: Command):
+
         if command.type == "close":
             websocket = self.sockets.pop(command.user_id, None)
             if websocket:
                 await websocket.close(code=command.code, reason=command.reason)
+
         elif command.type == "broadcast":
             for user_id, websocket in list(self.sockets.items()):
                 try:
@@ -67,6 +70,7 @@ class WebSocketManager:
                 except Exception:
                     print(f"Failed to send broadcast to {user_id}, dropping the socket")
                     self.sockets.pop(user_id, None)
+
         elif command.type == "send":
             websocket = self.sockets.get(command.user_id)
             if websocket:
@@ -75,13 +79,15 @@ class WebSocketManager:
                 except Exception:
                     print(f"Failed to send message to {command.user_id}, dropping the socket")
                     self.sockets.pop(command.user_id, None)
+
         elif command.type == "schedule":
-            # Not `await asyncio.sleep(...)` here: run() is called from dispatch(),
-            # which holds the lock, so waiting here would stop every other event
-            # for the whole delay. The wait runs on its own, and returns at once.
+            # never await the delay here: dispatch() holds the lock while run() runs
             timer = asyncio.create_task(self._dispatch_later(command.delay, command.event))
             self._timers.add(timer)
             timer.add_done_callback(self._timers.discard)
+
+        elif command.type == "delete_file":
+            delete_quietly(command.path)
 
     async def _dispatch_later(self, delay: float, event: Event):
         await asyncio.sleep(delay)

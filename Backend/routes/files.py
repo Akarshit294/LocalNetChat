@@ -1,19 +1,24 @@
-from fastapi import APIRouter, Header, HTTPException, Request, Response, Cookie
+from fastapi import APIRouter, Header, HTTPException, Request, Cookie
+from fastapi.responses import StreamingResponse
+import errno
 import re
 import uuid
 from realtime.manager import ws_manager
 from realtime.reducer import can_download, file_upload_refusal
+from realtime.storage import delete_quietly, free_bytes, path_for
 from realtime.types import SharedFile, Validate, Event
 from realtime.validation import user_for_token, validate_file_name, safe_media_type
 from routes.guards import same_origin
 from datetime import datetime
+import aiofiles
+
 
 router = APIRouter()
 
+TOO_BIG = f"That file is over {Validate.FILE_MAX_BYTES // 1024 ** 3} GB"
+DISK_FULL = "There isn't room for that file on the server"
 
-# HTTP's half of "who is this?": the session cookie, and 401 if it's nobody's.
-# The pure half, whose session this is, is user_for_token in validation.py: a
-# session id becomes its user's token when they join.
+
 def who_is_asking(session: str | None) -> uuid.UUID:
     """The user this request is from, by their session cookie. 401 if there's no valid one."""
     user_id = user_for_token(ws_manager.state, session)
@@ -24,65 +29,64 @@ def who_is_asking(session: str | None) -> uuid.UUID:
 
 @router.post("/files", status_code=201)
 async def share_file(
-    request: Request,                                   # the body is read from this, by hand
-    chat_id: uuid.UUID,                                 # ?chat_id=…
-    name: str,                                          # ?name=…
-    content_type: str | None = Header(default=None),    # Content-Type: what kind of bytes
-    content_length: int | None = Header(default=None),  # Content-Length: how many, by its own word
-    session: str | None = Cookie(default=None),         # Cookie: session=<id>, sent by the browser itself
+    request: Request,                                   
+    chat_id: uuid.UUID,                                 
+    name: str,                                         
+    content_type: str | None = Header(default=None),    
+    content_length: int | None = Header(default=None),  
+    session: str | None = Cookie(default=None),         
 ):
     """Share a file into a chat. The body is the file's bytes, nothing wrapped around them."""
-    # 0. from our own page? The cookie goes along by itself, so a page on another
-    # site could make the browser send this POST as you (CSRF)
     if not same_origin(request.headers.get("origin"), request.headers.get("host")):
         raise HTTPException(status_code=403, detail="Cross-origin request not allowed")
 
-    # 1. who is it? An HTTP request has no socket to say, so the session cookie does
     user_id = who_is_asking(session)
 
-    # 2. may they share into this chat? Asked before the body is read, so a
-    # stranger is turned away without us reading 50 MB of theirs
     refusal = file_upload_refusal(ws_manager.state, user_id, chat_id)
     if refusal:
         raise HTTPException(status_code=403, detail=refusal)
 
-    # 3. the name, trimmed like every other name here
     error = validate_file_name(name)
     if error:
         raise HTTPException(status_code=400, detail=error)
 
-    # 4. too big by its own word: refused before reading a byte
     if content_length is not None and content_length > Validate.FILE_MAX_BYTES:
-        raise HTTPException(status_code=413, detail="That file is over 50 MB")
+        raise HTTPException(status_code=413, detail=TOO_BIG)
+    if content_length is not None and content_length > free_bytes() - Validate.DISK_SPARE_BYTES:
+        raise HTTPException(status_code=507, detail=DISK_FULL)
 
-    # 5. read it, counting, because Content-Length can be missing or lie
-    chunks, total = [], 0
-    async for chunk in request.stream():   # the body arrives in pieces; we see each one
-        total += len(chunk)
-        if total > Validate.FILE_MAX_BYTES:
-            raise HTTPException(status_code=413, detail="That file is over 50 MB")
-        chunks.append(chunk)
+    file_id = uuid.uuid4()
+    path = path_for(file_id)
+    total = 0
+    try:
+        async with aiofiles.open(path, "wb") as f:
+            async for chunk in request.stream():
+                total += len(chunk)
+                if total > Validate.FILE_MAX_BYTES:
+                    raise HTTPException(status_code=413, detail=TOO_BIG)
+                await f.write(chunk)
+    except BaseException as error:
+        delete_quietly(path)
+        if isinstance(error, OSError) and error.errno == errno.ENOSPC:
+            raise HTTPException(status_code=507, detail=DISK_FULL) from error
+        raise
 
-    # 6. the id and the time are made here, never in the reducer
     shared_file = SharedFile(
-        id=uuid.uuid4(),
+        id=file_id,
         chat_id=chat_id,
         owner_id=user_id,
         name=name.strip(),
-        # no label from the browser means it doesn't know what kind of file this is
         content_type=content_type or "application/octet-stream",
-        data=b"".join(chunks),
-        shared_at=datetime.now()
+        path=str(path),
+        size=total,   # what was written; Content-Length can be missing or lie
+        shared_at=datetime.now(),
     )
 
-    # 7. the reducer stores it and tells the chat
     await ws_manager.dispatch(
         Event(type="file_shared", payload={"file": shared_file})
     )
 
-    # 8. did it land? Reading took a while, and the chat may have changed since
-    # step 2. The reducer asked again under the lock, and its answer is the one
-    # that counts. The same check connect() makes after a join.
+    # refused while it uploaded: the reducer has already asked for the file to go
     if shared_file.id not in ws_manager.state.files:
         raise HTTPException(
             status_code=403,
@@ -92,9 +96,6 @@ async def share_file(
     return {"file_id": str(shared_file.id)}
 
 
-# A Range header asks for one piece of a file, which is how a <video> skips
-# ahead without downloading everything before that point, and how a broken
-# download picks up where it stopped.
 UNSATISFIABLE = "unsatisfiable"
 
 
@@ -132,33 +133,42 @@ def parse_range(header: str | None, total: int) -> tuple[int, int] | str | None:
     return start, end
 
 
+async def stream_range(file_id: uuid.UUID, path: str, start: int, end: int):
+    """The file's bytes from start up to end, a chunk at a time, while it's still shared."""
+    async with aiofiles.open(path, "rb") as f:
+        await f.seek(start)
+        remaining = end - start
+        while remaining > 0:
+            # the sharer left: stop, so the download fails instead of completing
+            if file_id not in ws_manager.state.files:
+                return
+            chunk = await f.read(min(Validate.CHUNK_MAX_SIZE, remaining))
+            if not chunk:
+                return
+            remaining -= len(chunk)
+            yield chunk
+
+
 @router.get("/files/{file_id}")
 async def get_file(
     file_id: uuid.UUID,
-    # `range` alone would hide Python's own range(); the alias still reads "Range"
     range_header: str | None = Header(default=None, alias="range"),
-    # No Origin check: a GET changes nothing, and another site can't read what
-    # comes back. The cookie is what lets a <video> or a link fetch this by itself.
     session: str | None = Cookie(default=None),
 ):
-    """Fetch a file, or one piece of it. The body is its bytes, nothing wrapped around them."""
+    """Fetch a file, or one piece of it, streamed from disk."""
     user_id = who_is_asking(session)
 
-    # one answer for "no such file" and "not yours", so a stranger can't learn
-    # which files exist. GitHub does the same for a private repo you can't see.
     if not can_download(ws_manager.state, user_id, file_id):
         raise HTTPException(status_code=404, detail="No such file")
 
     shared_file = ws_manager.state.files[file_id]
-    total = len(shared_file.data)
+    total = shared_file.size
 
-    # The cleaned type, served exactly as it was checked. None means it isn't
-    # something a browser should show, so it goes as plain bytes and is saved.
     shown = safe_media_type(shared_file.content_type)
     media_type = shown or "application/octet-stream"
     headers = {
-        "X-Content-Type-Options": "nosniff",   # use our label, never a guess from the bytes
-        "Accept-Ranges": "bytes",              # the browser may ask for pieces
+        "X-Content-Type-Options": "nosniff",
+        "Accept-Ranges": "bytes",
     }
     if not shown:
         headers["Content-Disposition"] = "attachment"
@@ -168,13 +178,18 @@ async def get_file(
         raise HTTPException(
             status_code=416,
             detail="That range starts past the end of the file",
-            headers={"Content-Range": f"bytes */{total}"},   # how big it really is
+            headers={"Content-Range": f"bytes */{total}"},
         )
-    if piece is None:
-        # Content-Length goes in the headers too; Response sets it from the body
-        return Response(content=shared_file.data, media_type=media_type, headers=headers)
 
-    start, end = piece
-    # where these bytes sit in the file, and how big the whole file is
-    headers["Content-Range"] = f"bytes {start}-{end - 1}/{total}"
-    return Response(content=shared_file.data[start:end], status_code=206, media_type=media_type, headers=headers)
+    # `end` is one past the last byte, like a slice; Content-Range counts its end in
+    start, end = piece or (0, total)
+    headers["Content-Length"] = str(end - start)
+    if piece:
+        headers["Content-Range"] = f"bytes {start}-{end - 1}/{total}"
+
+    return StreamingResponse(
+        stream_range(file_id, shared_file.path, start, end),
+        status_code=206 if piece else 200,
+        media_type=media_type,
+        headers=headers,
+    )

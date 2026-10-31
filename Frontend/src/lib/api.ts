@@ -12,8 +12,6 @@ import { FAKE } from './mode.ts';
 // on the laptop (localhost) and on a phone on the same Wi-Fi (the laptop's IP).
 const API_BASE = '/api';
 const REQUEST_TIMEOUT_MS = 10_000;
-// 50 MB over a busy Wi-Fi can take a minute, so a file gets far longer than a question
-const FILE_TIMEOUT_MS = 5 * 60_000;
 
 // the page's own address with the scheme swapped: https -> wss, http -> ws
 export const WS_URL = `${window.location.origin.replace(/^http/, 'ws')}/ws`;
@@ -149,7 +147,7 @@ export const api = {
       const xhr = new XMLHttpRequest();
       const query = new URLSearchParams({ chat_id: chatId, name: file.name });
       xhr.open('POST', `${API_BASE}/files?${query}`);
-      xhr.timeout = FILE_TIMEOUT_MS;
+      // no time limit: 20 GB over Wi-Fi takes many minutes; a dropped connection still ends it
       xhr.upload.onprogress = (event) => {
         if (event.lengthComputable) {
           onProgress?.(event.loaded / event.total);

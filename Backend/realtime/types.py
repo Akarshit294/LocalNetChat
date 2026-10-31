@@ -25,7 +25,8 @@ class SharedFile(BaseModel):
     owner_id: uuid.UUID   # who shared it; the file goes when they do
     name: str
     content_type: str
-    data: bytes
+    path: str
+    size: int
     shared_at: datetime
 
 class Validate:
@@ -34,7 +35,9 @@ class Validate:
     MESSAGE_MAX_LENGTH : int = 1000
     GROUP_NAME_MIN_LENGTH : int = 1
     GROUP_NAME_MAX_LENGTH : int = 30
-    FILE_MAX_BYTES : int = 50 * 1024 * 1024   # 50 MB, all of it in the laptop's memory
+    FILE_MAX_BYTES : int = 20 * 1024 * 1024 * 1024   # 20 GB, written to disk as it arrives
+    CHUNK_MAX_SIZE : int = 1 * 1024 * 1024             # how much of a file is read at a time
+    DISK_SPARE_BYTES : int = 1 * 1024 * 1024 * 1024    # never fill the laptop's disk past this
     FILE_NAME_MAX_LENGTH : int = 255
     # A login that hasn't connected by then is dropped. The page connects within
     # milliseconds; this only clears logins nobody came back for.
@@ -46,8 +49,7 @@ class AppState(BaseModel):
 
     users: dict[uuid.UUID, User] = {} #Map user_id to user object
     chats: dict[uuid.UUID, Chat] = {} #Map chat_id to chat object
-    # shared files by file_id, bytes and all. A new state shares these with the old
-    # one rather than copying them, so 50 MB here costs nothing on each change.
+    # what's known about each shared file; its bytes are on disk, at `path`
     files: dict[uuid.UUID, SharedFile] = {}
     # names of people who have left, so their chats can still show who they were
     known_names: dict[uuid.UUID, str] = {}
@@ -67,6 +69,7 @@ class Command(BaseModel):
     # `delay` seconds the manager dispatches `event`, like any other event.
     delay: float | None = None
     event: Event | None = None
+    path: str | None = None   # "delete_file": the file on disk to remove
 
 # What a client may send us. Anything that doesn't fit one of these is refused,
 # so the reducer only ever sees messages of the right shape.

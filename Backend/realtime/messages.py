@@ -94,7 +94,7 @@ def file_message(file: SharedFile):
         "from_id": str(file.owner_id),
         "name": file.name,
         "content_type": file.content_type,
-        "size": len(file.data),
+        "size": file.size,
         "sent_at": file.shared_at.isoformat(),
     }
 
